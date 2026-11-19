@@ -104,3 +104,11 @@ En **Igualación inteligente → Corregir una muestra**, comprueba la repetibili
 El asistente toma las dosis de ensayos verificados con composición y condiciones comparables. Agrupa las dosis equivalentes y descarta una propuesta si alguna repetición comparable no habría mejorado el ΔE. La confianza se muestra como baja con una prueba y moderada si cuenta con repeticiones compatibles. El intervalo comunicado describe los escenarios registrados y no constituye un intervalo estadístico de predicción. Prepara primero una muestra pequeña y comprueba después el efecto, la estabilidad y la adherencia.
 
 En **Colorimetría → Importar lecturas CSV**, usa dos filas con los roles patrón y muestra. Las columnas obligatorias son `rol;formato;valores;iluminante;observador;condicion`. Las opcionales son `perfil;lab_icc;densidad;filtro;reflectancia`. Usa puntos para decimales. Separa los pares de reflectancia con `|`. Revisa el formulario cargado antes de calcular y guardar.
+
+## Academia, condiciones de medición y calidad
+
+En **Academia**, elige un curso y estudia sus módulos con diagramas, ejemplos y ejercicios. Puedes guardar tu avance y abrir el cuestionario al terminar. La biblioteca de referencias enlaza a los organismos que publican las normas. Confirma la edición aplicable y las tolerancias acordadas con tu cliente antes de usarlas como criterio de aceptación.
+
+En **Colorimetría**, registra las condiciones de medición del patrón y la muestra. En el CSV puedes incluir también las columnas opcionales `geometria` y `fondo`; si falta información, revisa los campos antes de guardar. Cuando ambas lecturas declaran una condición, deben coincidir para compararlas.
+
+En **Calidad**, selecciona el tipo de carta según cómo obtuviste los datos. Conserva el orden temporal y distingue entre unidades no conformes y número de defectos. Los límites de control se calculan a partir del proceso; la capacidad utiliza los límites de especificación confirmados. Guarda los estudios y registra por separado el seguimiento de las acciones correctivas.

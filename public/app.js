@@ -1,3 +1,4 @@
+import {createAcademy} from './academy.js';
 import {parseInstrumentCsv} from './instrument-import.js';
 import {createEngineering} from './engineering.js';
 import {createReferenceLibrary} from './reference-library.js';
@@ -69,7 +70,7 @@ function render(){
  $('#workspace-label').textContent=full?'Espacio personal':'Acceso de comparación';
  $('#profile').innerHTML='<span class="avatar">'+esc(initials)+'</span><span><strong>'+esc(state.user?.name || 'Usuario invitado')+'</strong><small>'+esc(full?state.user.role:'Comparación')+'</small></span>'+I('chevron');
  $('#account').textContent=initials;
- const content={...lab.views,espectral:colorTools.spectralView,calidad:quality.view,ingenieria:engineering.view,preparados:prepared.view,inicio:dashboard,mediciones:measurements,correcciones:simulation,asistente:assistant,academia:academy,calculadoras:calculators,historial:reports,usuarios:users};
+ const content={...lab.views,espectral:colorTools.spectralView,calidad:quality.view,ingenieria:engineering.view,preparados:prepared.view,inicio:dashboard,mediciones:measurements,correcciones:simulation,asistente:assistant,academia:academy.view,calculadoras:calculators,historial:reports,usuarios:users};
  $('#main').innerHTML=(content[state.view] || (()=>collection(state.view)))();
  initializeTheme();
  if(state.view==='inicio') chart();
@@ -133,7 +134,7 @@ function chart(){
 }
 const schemas={
  colores:[['target','Código Pantone o referencia'],['collection','Colección propia o licenciada'],
- ['hueName','Tonalidad'],['illuminant','Iluminante'],['geometry','Geometría de medición'],['observer','Observador',['','2°','10°']],['condition','Condición de medición',['','M0','M1','M2','M3']],
+ ['hueName','Tonalidad'],['illuminant','Iluminante'],['geometry','Geometría de medición'],['backing','Fondo de medición'],['observer','Observador',['','2°','10°']],['condition','Condición de medición',['','M0','M1','M2','M3']],
  ['product','Producto'],['job','Trabajo'],['source','Fuente o referencia autorizada'],['color','Vista previa sRGB','color'],['lab','L*, a*, b*'],['spectrum','Reflectancia (longitud de onda, valor)','textarea'],['customer','Cliente'],['substrate','Sustrato'],['tolerance','Tolerancia ΔE'],['favorite','Favorito','checkbox']],
  formulas:[['target','Color objetivo'],['color','Vista previa sRGB','color'],['technology','Tecnología',['Base agua','UV']],['family','Fabricante y familia'],['substrate','Sustrato y tratamiento'],['anilox','Anilox, lineatura y BCM real'],['batch','Cantidad a preparar (g)','number'],['conditions','Viscosidad, pH, temperatura y acabados'],['components','Componentes conocidos (uno por línea, nombre: porcentaje)','textarea'],['notes','Procedimiento, lotes y evidencia','textarea']],
  inventario:[['code','Código de tinta'],['lot','Lote'],['minStock','Stock mínimo (kg)','number'],['supplier','Proveedor'],['technology','Tecnología',['','Base agua','UV','Base solvente']],['quantity','Existencia (kg)','number'],['reportedQuantity','Saldo original del PDF (kg)','number'],['entryDate','Fecha de ingreso','date'],['expiry','Caducidad confirmada','date'],['lifeDays','Vigencia indicada en el PDF'],['cost','Costo por kg','number'],['currency','Moneda',['','MXN','USD','EUR']],['stockVerified','Existencia y aptitud verificadas','checkbox'],['notes','Compatibilidad, movimientos y sobrantes','textarea']],
@@ -230,6 +231,8 @@ function measurements(){
  '<div><h3>Patrón</h3>'+measurementFields('p',full)+'</div><div><h3>Muestra</h3>'+measurementFields('m',full)+'</div>'+
  field('tolerance','Tolerancia ΔE','number',2,true)+field('condition','Condición de medición',['M0','M1','M2','M3'])+
  field('illuminant','Iluminante / observador','text','D50 / 2°',true)+field('method','Método',['ΔE 2000','ΔE 76','ΔE 94 (artes gráficas)','CMC (2:1)'])+
+ field('geometry','Geometría (por ejemplo 45°/0°)')+field('backing','Fondo de medición')+
+ '<details class="wide"><summary>Cómo elegir las condiciones</summary><p class="notice">Usa el iluminante, observador, geometría y fondo de tu especificación o patrón. M0 corresponde a una condición histórica de medición; M1 busca condiciones de iluminación compatibles con D50 y su UV; M2 reduce la contribución UV; M3 usa polarización en una condición con UV reducido. Confirma el modo que realmente utilizó tu instrumento. Cambiar el observador o la luz de referencia cambia la interpretación del color.</p></details>'+
  (full?'<details class="wide"><summary>Evidencia óptica del instrumento</summary><div class="form-grid">'+
  field('patternDensity','Densidad óptica del patrón','number')+field('sampleDensity','Densidad óptica de la muestra','number')+
  field('densityCondition','Canal, filtro o condición de densidad')+field('patternCurve','Reflectancia del patrón (%), una línea nm, porcentaje','textarea')+
@@ -240,7 +243,7 @@ function measurements(){
 }
 function instrumentImport(){
  modal('Importar lecturas del instrumento','<form id="instrument-import"><label class="field">Archivo CSV<input type="file" name="file" accept=".csv,text/csv" required></label>'+
-  '<p class="notice">Usa dos filas, patrón y muestra. Encabezados requeridos: rol, formato, valores, iluminante, observador y condicion. Opcionales: perfil, lab_icc, densidad, filtro y reflectancia. Separa los pares espectrales con |.</p>'+
+  '<p class="notice">Usa dos filas, patrón y muestra. Encabezados requeridos: rol, formato, valores, iluminante, observador y condicion. Opcionales: perfil, lab_icc, densidad, filtro, geometria, fondo y reflectancia. Separa los pares espectrales con |.</p>'+
   '<p class="notice">Puedes usar punto y coma como separador de columnas. Si usas comas, pon los valores de cada lectura entre comillas.</p>'+
   '<div class="form-actions"><button class="primary">Validar y cargar en el formulario</button></div><p class="error" role="alert"></p></form>');
 }
@@ -257,7 +260,7 @@ async function fillInstrumentCsv(file){
   }
  }
  const values={illuminant:data.condition,condition:data.mode,patternDensity:data.pattern.density,sampleDensity:data.sample.density,
-  densityCondition:data.filter,patternCurve:data.pattern.reflectance,sampleCurve:data.sample.reflectance};
+  densityCondition:data.filter,geometry:data.geometry,backing:data.backing,patternCurve:data.pattern.reflectance,sampleCurve:data.sample.reflectance};
  for(const [key,value] of Object.entries(values))set(key,value);
  const result=form.querySelector('.result');result.hidden=true;result.replaceChildren();
  dialog.close();toast('Lecturas cargadas. Revísalas antes de calcular y guardar.');
@@ -278,7 +281,7 @@ function measurementRow(record){
 }
 function measureTrend(record){
  const {value:v}=record;
- const signature=value=>JSON.stringify([value.illuminant,value.condition,value.method,Array.isArray(value.pattern)?value.pattern.map(n=>Number(n).toFixed(4)):[]]);
+ const signature=value=>JSON.stringify([value.illuminant,value.condition,value.geometry||'',value.backing||'',value.method,Array.isArray(value.pattern)?value.pattern.map(n=>Number(n).toFixed(4)):[]]);
  const samples=(v.work?byKind('mediciones').filter(r=>String(r.value.work||'').trim().toLowerCase()===String(v.work).trim().toLowerCase()&&signature(r.value)===signature(v)):[]).filter(r=>Number.isFinite(r.value.delta));
  if(!samples.some(r=>r.id===record.id)&&Number.isFinite(v.delta))samples.push(record);
  samples.sort((a,b)=>a.id-b.id);
@@ -340,16 +343,7 @@ function simulate(form){
   'Patrón · Muestra inicial · Muestra ajustada<br>ΔE antes '+r.value.delta.toFixed(2)+' · ΔE después '+delta.toFixed(2)+' · '+(delta<=r.value.tolerance?'Dentro de tolerancia':'Fuera de tolerancia');
  return {measurement:r.id,adjusted,delta,method:r.value.method,condition:r.value.condition,illuminant:r.value.illuminant,change:v.change,color:colors[2]?.hex||'',target:'ΔE '+delta.toFixed(2),title:r.title};
 }
-const lessons=[
- ['Teoría del color','El tono identifica la familia cromática, el croma indica su intensidad y L* describe la luminosidad.','¿Qué expresa L*?',['Luminosidad','Tono','Viscosidad']],
- ['Mezcla y neutralización','En mezcla aditiva se suman luces. Los pigmentos absorben parte del espectro. Una tinta complementaria puede reducir el croma, con un efecto dependiente del pigmento y la concentración.','¿Qué tipo de mezcla se aplica a pigmentos?',['Sustractiva','Aditiva','Especular']],
- ['Colorimetría aplicada','ΔE resume la diferencia entre muestras. Delta L*, a* y b* indican la dirección del cambio. Mide bajo el mismo iluminante, observador y condición M.','¿Qué señala ΔL* positivo para muestra menos patrón?',['Muestra más clara','Muestra más azul','Muestra más oscura']],
- ['Anilox y transferencia','El volumen de celda real y su obstrucción influyen en la película de tinta. Confirma el estado del rodillo antes de atribuir una variación a la fórmula.','¿Qué volumen describe mejor la condición actual?',['BCM real medido','BCM nominal','Ancho del rodillo']],
- ['Tintas base agua y UV','La evaporación y absorción influyen en el secado de base agua. En sistemas UV, el curado depende de la exposición, la formulación y las condiciones de impresión.','¿Qué proceso describe una tinta UV?',['Curado','Evaporación de agua','Sedimentación']]
-];
-function academy(){
- return heading('Academia','Explora los fundamentos de la tinta flexográfica y practica con ejercicios.')+lessons.map(([title,lesson,question,options],index)=>'<details class="panel lesson"><summary>'+title+(byKind('academia').some(r=>r.value.lesson===index)?' · Completada':'')+'</summary><p>'+lesson+'</p><form data-quiz="'+index+'"><label class="field">'+question+'<select name="answer" required><option value="">Selecciona una respuesta</option>'+[...options].sort().map(option=>'<option>'+option+'</option>').join('')+'</select></label><div class="form-actions"><button class="secondary">Comprobar respuesta</button></div><p class="error"></p></form></details>').join('')+'<section class="panel"><h2>Círculo cromático</h2><div class="form-actions"><div aria-hidden="true" style="width:100px;height:100px;flex:none;border-radius:50%;background:conic-gradient(red,#ff0,#0f0,#0ff,#00f,#f0f,red)"></div><label class="field">Ángulo de tono<input type="range" min="0" max="360" value="180" id="hue"></label><span id="hue-result"></span></div></section>';
-}
+
 const advice=[
  [/espuma/i,'Revisa la entrada de aire en la recirculación y la velocidad de agitación. Consulta la ficha del antiespumante compatible y documenta una prueba a escala pequeña.'],
  [/anilox|transfer|intensidad/i,'Compara el BCM real con el nominal. Inspecciona obstrucciones y confirma presión, viscosidad y velocidad con una prueba controlada antes de modificar la fórmula.'],
@@ -472,6 +466,7 @@ document.addEventListener('click',async event=>{
   }
   if(d.inventoryOpen)return inventory.open(d.inventoryOpen);
   if(d.stockMovement)return await inventory.movement(d.stockMovement);
+  if(d.courseModule)return await academy.complete(el);
   if(d.measureImport!==undefined&&state.user?.fullAccess)return instrumentImport();
   if(d.measureTrend){const row=byKind('mediciones').find(r=>r.id===Number(d.measureTrend));if(row)measureTrend(row);return;}
   if(d.duplicateFormula){const row=byKind('formulas').find(r=>r.id===Number(d.duplicateFormula));if(row)await editor('formulas',row,true);return;}
@@ -617,12 +612,7 @@ document.addEventListener('submit',async event=>{
    }
   }
   if(form.dataset.user){await api('users',{id:Number(form.dataset.user),role:data.role});toast('Rol actualizado');return;}
-  if(form.dataset.quiz!==undefined){
-   const index=Number(form.dataset.quiz),[title,,,options]=lessons[index];
-   if(data.answer!==options[0])throw new Error('Revisa la lección y vuelve a intentarlo.');
-   if(state.user&&!byKind('academia').some(r=>r.value.lesson===index)){await save({kind:'academia',title,value:{lesson:index},status:'Completada'});return;}
-   toast('Respuesta correcta');return;
-  }
+  if(form.dataset.courseQuiz){academy.quiz(form);return;}
   if(form.dataset.calc==='ink-estimate'){
    const numeric=Object.fromEntries(Object.entries(data).map(([key,value])=>[key,value===''?null:Number(value)]));
    const estimate=estimateInk(numeric), result=$('output',form);
@@ -665,11 +655,12 @@ document.addEventListener('input',event=>{
  }
  if(el.id==='hue')$('#hue-result').textContent=el.value+'° · Complementario '+((Number(el.value)+180)%360)+'°';
 });
-document.addEventListener('change',event=>{lab.change(event.target);engineering.change(event.target);if(event.target.form?.id==='measure'&&['pFormat','mFormat'].includes(event.target.name))toggleMeasurementFormat(event.target);if(event.target.id==='chart-days'){state.chartDays=Number(event.target.value);render();$('#chart-days').focus();}});
+document.addEventListener('change',event=>{lab.change(event.target);engineering.change(event.target);quality.change(event.target);if(event.target.form?.id==='measure'&&['pFormat','mFormat'].includes(event.target.name))toggleMeasurementFormat(event.target);if(event.target.id==='chart-days'){state.chartDays=Number(event.target.value);render();$('#chart-days').focus();}});
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();search();}});
 dialog.addEventListener('close',flushDraft);
 window.addEventListener('popstate',()=>navigate(views[location.hash.slice(1)]?location.hash.slice(1):'inicio'));
 const inventory=createInventory({state,esc,field,btn,modal,api,refresh,render,toast});
+const academy=createAcademy({state,esc,heading,btn,api,refresh,toast});
 const engineering=createEngineering({state,esc,field,heading,btn,modal,api,refresh,render,toast,download});
 const references=createReferenceLibrary({state,esc,field,btn,modal,api,refresh,render,toast});
 const prepared=createPrepared({state,field,esc,heading,btn,modal,api,refresh,render,toast,delta:(a,b)=>differences(a,b).e[0],recipe});

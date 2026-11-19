@@ -170,7 +170,7 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
   const color=target(input),ctx=context(input),tolerance=positive(input.tolerance,'La tolerancia'), reported=input.reported===''||input.reported==null?null:Number(input.reported);
   if(reported!==null&&(!Number.isFinite(reported)||reported<0))throw new Error('El ΔE del instrumento debe ser positivo o cero.');
   const reading=measures().find(r=>r.id===Number(input.measurement));
-  if(reading&&(normalize(reading.value.condition)!==normalize(ctx.condition)||normalize(reading.value.illuminant)!==normalize(ctx.illuminant)))throw new Error('Selecciona las mismas condiciones de medición que tiene el registro guardado.');
+  if(reading&&(normalize(reading.value.condition)!==normalize(ctx.condition)||normalize(reading.value.illuminant)!==normalize(ctx.illuminant)||['geometry','backing'].some(key=>normalize(reading.value[key])!==normalize(ctx[key]))))throw new Error('Selecciona las mismas condiciones, geometría y fondo de la medición guardada.');
   const current=reading?.value.sample||readLab(input.current,input.format), parts=mixture(input.parts,inks()), beforeSpectrum=spectrum(input.reflectance);
   const savedPattern=own('colores').find(r=>r.id===Number(input.pattern));
   const targetCurve=spectrum(input.targetReflectance||savedPattern?.value.spectrum);

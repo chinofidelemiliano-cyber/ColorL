@@ -21,7 +21,8 @@ export function individuals(values,{lower=null,upper=null,assumptions=false}={})
  if(assumptions&&values.length>=25&&sigma>0&&!signals.length&&!rangeSignals.length&&(lower!==null||upper!==null)){
   const cpu=upper===null?null:(upper-mean)/(3*sigma);
   const cpl=lower===null?null:(mean-lower)/(3*sigma);
-  capability=cpu!==null&&cpl!==null?{cp:(upper-lower)/(6*sigma),cpk:Math.min(cpu,cpl),cpu,cpl}:{cpu,cpl};
+  const s=Math.sqrt(values.reduce((sum,v)=>sum+(v-mean)**2,0)/(values.length-1));
+  capability=cpu!==null&&cpl!==null?{pp:(upper-lower)/(6*s),ppk:Math.min(upper-mean,mean-lower)/(3*s),cp:(upper-lower)/(6*sigma),cpk:Math.min(cpu,cpl),cpu,cpl}:{cpu,cpl};
  }
  return {mean,ranges,rangeMean,sigma,lcl,ucl,mrUcl,signals,rangeSignals,outside,capability};
 }

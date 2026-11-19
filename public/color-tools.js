@@ -17,7 +17,7 @@ export function createColorTools({state,esc,field,heading,btn,modal,api,refresh,
  }
  const measuringFields=()=>field('illuminant','Iluminante','text','D50',true)+field('observer','Observador',observers,'2°')+field('condition','Condición M',measurementConditions,'M1');
  const treatmentFields=()=>field('technology','Tecnología',technologies)+field('substrate','Sustrato y tratamiento','text','',true)+
-  field('anilox','Código de anilox','text','',true)+field('bcm','BCM real medido','number','',true)+field('geometry','Geometría de medición','text','',true)+measuringFields();
+  field('anilox','Código de anilox','text','',true)+field('bcm','BCM real medido','number','',true)+field('geometry','Geometría de medición','text','',true)+field('backing','Fondo de medición')+measuringFields();
  const result=(form,html)=>{
   const node=form.querySelector('.result');node.innerHTML=html;node.hidden=false;
  };
@@ -45,7 +45,7 @@ export function createColorTools({state,esc,field,heading,btn,modal,api,refresh,
    notice('Importa únicamente datos propios o colecciones cuya licencia te autorice a utilizar.')+
    '<div class="form-actions"><button class="primary">Revisar CSV</button></div>'+output+'</form>',true);
   if(mode==='nearest')return modal('Buscar patrones por medición','<form data-color-form="nearest"><div class="form-grid">'+
-   field('lab','CIELAB (L*, a*, b*)','text','',true)+measuringFields()+field('geometry','Geometría (opcional)')+field('customer','Cliente (opcional)')+
+   field('lab','CIELAB (L*, a*, b*)','text','',true)+measuringFields()+field('geometry','Geometría (opcional)')+field('backing','Fondo (opcional)')+field('customer','Cliente (opcional)')+
    field('product','Producto (opcional)')+field('job','Trabajo (opcional)')+field('substrate','Sustrato (opcional)')+
    '</div><div class="form-actions"><button class="primary">Buscar por ΔE₀₀</button></div>'+output+'</form>');
   if(mode==='compare')return modal('Comparar patrones guardados','<form data-color-form="compare"><div class="form-grid">'+
@@ -81,11 +81,11 @@ export function createColorTools({state,esc,field,heading,btn,modal,api,refresh,
    (curves.map(record=>'<div class="record-row"><div><strong>'+esc(record.title)+'</strong><small>'+esc(record.value.context.substrate)+' · '+esc(record.value.series.samples.length)+' muestras medidas</small></div>'+
     btn('Ver evidencia','data-color-curve='+record.id,'chart','text-button')+'</div>').join('')||notice('Registra una serie de pruebas para evaluar una predicción.'))+'</section>';
  }
- const contextsMatch=(a,b)=>sameMeasurement(a,b)&&['technology','substrate','anilox','bcm','geometry'].every(key=>normalize(a[key])===normalize(b[key]));
+ const contextsMatch=(a,b)=>sameMeasurement(a,b)&&['technology','substrate','anilox','bcm','geometry','backing'].every(key=>normalize(a[key])===normalize(b[key]));
  function spectralContext(data){
   const result=context(data);
   result.illuminant=result.illuminant.toUpperCase();
-  result.observer=data.observer;result.geometry=String(data.geometry||'').trim();
+  result.observer=data.observer;result.backing=String(data.backing||'').trim();result.geometry=String(data.geometry||'').trim();
   if(!result.geometry||!observers.includes(result.observer)||!measurementConditions.includes(result.condition))throw new Error('Indica la geometría, el observador y la condición de medición.');
   return result;
  }
@@ -143,7 +143,7 @@ export function createColorTools({state,esc,field,heading,btn,modal,api,refresh,
   if(mode==='predict'){
    const record=own('curvas').find(r=>r.id===Number(input.curve)),pattern=standards().find(r=>r.id===Number(input.pattern)),conditions=spectralContext(input);
    if(!record?.value.confirmed||!contextsMatch(record.value.context,conditions))throw new Error('Reproduce las condiciones de tecnología, sustrato, anilox, BCM y medición de la serie.');
-   if(pattern&&(!sameMeasurement(pattern.value,conditions)||normalize(pattern.value.geometry)!==normalize(conditions.geometry)))
+   if(pattern&&(!sameMeasurement(pattern.value,conditions)||['geometry','backing'].some(key=>normalize(pattern.value[key])!==normalize(conditions[key]))))
     throw new Error('El patrón guardado y la serie deben compartir geometría, iluminante, observador y condición. Si falta la geometría, complétala en el patrón.');
    const target=spectrum(pattern?.value.spectrum||input.target),mass=positive(input.batch,'La cantidad de mezcla');
    const ink=inks().find(r=>r.id===record.value.inkId),base=inks().find(r=>r.id===record.value.baseId);

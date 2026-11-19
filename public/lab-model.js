@@ -55,7 +55,7 @@ export const processFields=[
  ['transfer','Transferencia medida (%)','number',0,100],['film','Película medida (µm)','number',0],
  ['plate','Placa y cinta','text'],['pressure','Presión, punto de ajuste y unidad','text'],
  ['drying','Secado o curado documentado','text'],['finishing','Blanco de respaldo, barniz o laminado','text'],
- ['sequence','Orden de impresión y trapping','text']
+ ['sequence','Orden de impresión y trapping','text'],['geometry','Geometría de medición','text'],['backing','Fondo de medición','text']
 ];
 export function context(input){
  const result={};

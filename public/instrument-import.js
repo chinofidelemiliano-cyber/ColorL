@@ -18,12 +18,12 @@ export function parseInstrumentCsv(text){
    throw new Error('Identifica un patrón y una muestra con formato, iluminante, observador y condición M válidos.');
   const readings=instrumentReading({format,text:v.valores,profile:v.perfil,iccLab:v.lab_icc,condition});
   const reflectance=spectrum((v.reflectancia||'').replaceAll('|','\n')).map(pair=>pair.join(', ')).join('\n');
-  data[role]={...readings,text:v.valores,iccLab:v.lab_icc||'',density:v.densidad||'',filter:v.filtro||'',reflectance,condition,m};
+  data[role]={...readings,text:v.valores,iccLab:v.lab_icc||'',density:v.densidad||'',filter:v.filtro||'',reflectance,condition,m,geometry:v.geometria||'',backing:v.fondo||''};
  }
  const {patron:p,muestra:q}=data;
- if(p.condition!==q.condition||p.m!==q.m)throw new Error('Patrón y muestra deben compartir iluminante, observador y condición M.');
+ if(p.condition!==q.condition||p.m!==q.m||normalize(p.geometry)!==normalize(q.geometry)||normalize(p.backing)!==normalize(q.backing))throw new Error('Patrón y muestra deben compartir iluminante, observador, condición M, geometría y fondo.');
  if((p.density&&!p.filter)||(q.density&&!q.filter)||(p.density&&q.density&&normalize(p.filter)!==normalize(q.filter)))
   throw new Error('Las densidades necesitan un filtro identificado y comparable.');
  opticalEvidence(p.reflectance,q.reflectance,p.density,q.density);
- return {pattern:p,sample:q,condition:p.condition,mode:p.m,filter:p.filter||q.filter};
+ return {pattern:p,sample:q,condition:p.condition,mode:p.m,geometry:p.geometry,backing:p.backing,filter:p.filter||q.filter};
 }

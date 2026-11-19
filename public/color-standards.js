@@ -20,16 +20,18 @@ export function standardValue(data){
  const rawTolerance=String(data.tolerance??'').trim(), tolerance=rawTolerance?Number(rawTolerance):'';
  if(tolerance!==''&&(!Number.isFinite(tolerance)||tolerance<=0))throw new Error('La tolerancia ΔE₀₀ debe ser mayor que cero.');
  const color=clean(data.color,7);
- return {target:reference,collection,illuminant,observer,condition,geometry:clean(data.geometry),lab,spectrum:points.map(pair=>pair.join(', ')).join('\n'),
+ return {target:reference,collection,illuminant,observer,condition,geometry:clean(data.geometry),backing:clean(data.backing),lab,spectrum:points.map(pair=>pair.join(', ')).join('\n'),
   tolerance,hueName:clean(data.hueName),customer:clean(data.customer),product:clean(data.product),job:clean(data.job),substrate:clean(data.substrate),source:clean(data.source,500),
   color:/^#[0-9a-f]{6}$/i.test(color)?color.toLowerCase():'',favorite:false};
 }
 export function standardKey(value){
- return JSON.stringify(['collection','target','customer','product','job','substrate','illuminant','observer','condition','geometry'].map(key=>normalize(value[key])));
+ const identity=['collection','target','customer','product','job','substrate','illuminant','observer','condition','geometry'].map(key=>normalize(value[key]));
+ if(normalize(value.backing))identity.push(normalize(value.backing));
+ return JSON.stringify(identity);
 }
 const headerAliases={
  nombre:'title',tonalidad:'hueName',codigo:'target',coleccion:'collection',l:'l',a:'a',b:'b',lab:'lab',reflectancia:'spectrum',
- iluminante:'illuminant',observador:'observer',geometria:'geometry',condicion:'condition',tolerancia:'tolerance',
+ iluminante:'illuminant',observador:'observer',geometria:'geometry',fondo:'backing',condicion:'condition',tolerancia:'tolerance',
  cliente:'customer',producto:'product',trabajo:'job',sustrato:'substrate',fuente:'source',hex:'color'
 };
 export function parseStandardsCsv(text){
@@ -59,11 +61,11 @@ export function parseStandardsCsv(text){
 }
 const same=(a,b)=>Boolean(a&&b&&normalize(a)===normalize(b));
 export const sameMeasurement=(pattern,context)=>['illuminant','observer','condition'].every(key=>same(pattern[key],context[key]))&&
- (!pattern.geometry||!context.geometry||same(pattern.geometry,context.geometry));
+ ['geometry','backing'].every(key=>!pattern[key]||!context[key]||same(pattern[key],context[key]));
 export function nearestStandards(records,query,delta){
  return records.flatMap(record=>{
   const {value}=record;
-  if(!value.lab||!sameMeasurement(value,query)||(query.geometry&&!same(value.geometry,query.geometry))||['customer','product','job','substrate'].some(key=>query[key]&&!same(value[key],query[key])))return [];
+  if(!value.lab||!sameMeasurement(value,query)||(['geometry','backing'].some(key=>query[key]&&!same(value[key],query[key])))||['customer','product','job','substrate'].some(key=>query[key]&&!same(value[key],query[key])))return [];
   try{
    const difference=delta(parseLab(value.lab),query.lab);
    return Number.isFinite(difference)?[{record,difference}]:[];

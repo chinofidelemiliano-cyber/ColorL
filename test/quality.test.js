@@ -16,7 +16,7 @@ test('calcula capacidad solo con la evidencia mínima y diferencia límites unil
  const fit=individuals(data,{upper:13,assumptions:true});
  assert.ok(fit.capability.cpu>0);
  assert.equal(fit.capability.cpl,null);
- assert.deepEqual(Object.keys(individuals(data,{lower:8,upper:13,assumptions:true}).capability),['cp','cpk','cpu','cpl']);
+ assert.deepEqual(Object.keys(individuals(data,{lower:8,upper:13,assumptions:true}).capability),['pp','ppk','cp','cpk','cpu','cpl']);
 });
 test('acumula categorías del Pareto y rechaza frecuencias inválidas',()=>{
  const report=pareto([{category:'Espuma',count:3},{category:'espuma',count:5},{category:'Secado',count:2}]);
