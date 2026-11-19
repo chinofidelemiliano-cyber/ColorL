@@ -96,3 +96,11 @@ Las recetas de referencia se vinculan por código y sistema y se escalan por mas
 En los catálogos las dimensiones de cilindros sin medir se conservan como pendientes. Registra por separado el diámetro físico, el paso y los dientes. Para el cálculo axial, primero crea una máquina con la constante y su origen documentados. Vincula el suaje, el cilindro y la estación a esa máquina y usa la misma referencia axial en las fichas. El sistema comprueba la coincidencia del engrane y el ancho útil. La fase circunferencial se calcula por separado a partir de un diente de referencia y un sentido definidos.
 
 **Nueva orden técnica** reúne un cálculo de producción guardado y las fichas seleccionadas. Puedes adjuntar cálculos de montaje y distorsión y registrar inspecciones y una referencia de recorrido autorizado. La orden se guarda como borrador, muestra campos pendientes y se imprime o exporta en Excel.
+
+## Diagnóstico previo a la corrección e importación de lecturas
+
+En **Igualación inteligente → Corregir una muestra**, comprueba la repetibilidad del instrumento, la transferencia, el sustrato y el estado de tinta y secado o curado. Compara cada comprobación con una condición aprobada y registra la referencia utilizada. Si hay datos pendientes o divergencias, puedes conservar la comparación y ver qué revisar antes de dosificar. **Diagnóstico de impresión** contiene procedimientos por síntoma.
+
+El asistente toma las dosis de ensayos verificados con composición y condiciones comparables. Agrupa las dosis equivalentes y descarta una propuesta si alguna repetición comparable no habría mejorado el ΔE. La confianza se muestra como baja con una prueba y moderada si cuenta con repeticiones compatibles. El intervalo comunicado describe los escenarios registrados y no constituye un intervalo estadístico de predicción. Prepara primero una muestra pequeña y comprueba después el efecto, la estabilidad y la adherencia.
+
+En **Colorimetría → Importar lecturas CSV**, usa dos filas con los roles patrón y muestra. Las columnas obligatorias son `rol;formato;valores;iluminante;observador;condicion`. Las opcionales son `perfil;lab_icc;densidad;filtro;reflectancia`. Usa puntos para decimales. Separa los pares de reflectancia con `|`. Revisa el formulario cargado antes de calcular y guardar.

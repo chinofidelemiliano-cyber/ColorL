@@ -51,7 +51,11 @@ export const processFields=[
  ['surfaceEnergy','Tratamiento (dinas/cm)','number',0],['lineature','Lineatura','number',1],
  ['nominalBcm','BCM nominal','number',0],['speed','Velocidad de impresión (m/min)','number',0],
  ['viscosity','Viscosidad (valor, unidad y copa)','text'],['ph','pH','number',0,14],
- ['temperature','Temperatura de tinta (°C)','number',-50,100]
+ ['temperature','Temperatura de tinta (°C)','number',-50,100],['machine','Máquina o banco de prueba','text'],
+ ['transfer','Transferencia medida (%)','number',0,100],['film','Película medida (µm)','number',0],
+ ['plate','Placa y cinta','text'],['pressure','Presión, punto de ajuste y unidad','text'],
+ ['drying','Secado o curado documentado','text'],['finishing','Blanco de respaldo, barniz o laminado','text'],
+ ['sequence','Orden de impresión y trapping','text']
 ];
 export function context(input){
  const result={};
@@ -114,19 +118,30 @@ function sameRecipe(left,right){
 export function corrections(trials,inks,{target,current,conditions,parts},delta){
  const baseline=delta(target,current), mass=total(parts);
  if(!matchingParts(parts,inks,conditions))return [];
- return trials.filter(r=>{
-  const v=r.value;
-  return v.verified===true&&v.mode==='ajuste'&&compatible(v.conditions,conditions)&&validLab(v.before)&&validLab(v.after)&&
-   matchingParts(v.parts,inks,conditions)&&allAvailable(v.additions,inks,conditions)&&sameRecipe(parts,v.parts)&&delta(current,v.before)<=1;
- }).map(record=>{
-  const v=record.value, estimated=current.map((value,i)=>value+v.after[i]-v.before[i]);
+ const groups=new Map();
+ for(const record of trials){
+  const v=record.value;
+  if(v.verified!==true||v.mode!=='ajuste'||!compatible(v.conditions,conditions)||!validLab(v.before)||!validLab(v.after)||
+    !matchingParts(v.parts,inks,conditions)||!allAvailable(v.additions,inks,conditions)||!sameRecipe(parts,v.parts)||delta(current,v.before)>1)continue;
+  const signature=v.additions.map(part=>part.id+':'+(part.grams/total(v.parts)).toFixed(7)).join('|');
+  const estimated=current.map((value,i)=>value+v.after[i]-v.before[i]);
   const score=validLab(estimated)?delta(target,estimated):Infinity;
-  const add=v.additions.map(part=>({id:part.id,grams:part.grams*mass/total(v.parts)}));
+  const group=groups.get(signature)||{record,outcomes:[]};
+  group.outcomes.push({estimated,score});
+  groups.set(signature,group);
+ }
+ return [...groups.values()].flatMap(({record,outcomes})=>{
+  const worst=Math.max(...outcomes.map(o=>o.score)),best=Math.min(...outcomes.map(o=>o.score));
+  if(worst>=baseline)return [];
+  const estimated=current.map((_,i)=>outcomes.reduce((sum,o)=>sum+o.estimated[i],0)/outcomes.length),score=delta(target,estimated);
+  const add=record.value.additions.map(part=>({id:part.id,grams:part.grams*mass/total(record.value.parts)}));
+  if(!enoughStock(add,inks))return [];
   const final=new Map(parts.map(part=>[part.id,part.grams]));
-  for(const part of add) final.set(part.id,(final.get(part.id)||0)+part.grams);
+  for(const part of add)final.set(part.id,(final.get(part.id)||0)+part.grams);
   const reduced=scale([...final].map(([id,grams])=>({id,grams})),mass).map(part=>({...part,difference:part.grams-(parts.find(p=>p.id===part.id)?.grams||0)}));
-  return {record,score,estimated,add,reduced};
- }).filter(candidate=>candidate.score<baseline&&enoughStock(candidate.add,inks)).sort((a,b)=>a.score-b.score).slice(0,5);
+  const risks=estimated.flatMap((v,i)=>Math.abs(v-target[i])>Math.abs(current[i]-target[i])+.01?[['L*','a*','b*'][i]]:[]);
+  return [{record,score,estimated,add,reduced,best,worst,count:outcomes.length,risks}];
+ }).sort((a,b)=>a.worst-b.worst||b.count-a.count).slice(0,5);
 }
 export function diagnostic(inks,input){
  const mass=positive(input.batch,'La masa del lote');

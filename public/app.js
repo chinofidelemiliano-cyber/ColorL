@@ -1,3 +1,4 @@
+import {parseInstrumentCsv} from './instrument-import.js';
 import {createEngineering} from './engineering.js';
 import {createReferenceLibrary} from './reference-library.js';
 import {createPrepared} from './prepared.js';
@@ -224,7 +225,7 @@ function measurementFields(prefix,full){
 }
 function measurements(){
  const full=state.user.fullAccess;
- return heading(full?'Colorimetría':'Comparar colores',full?'Compara lecturas, interpreta desviaciones y conserva los datos del instrumento.':'Ingresa los valores CIELAB del patrón y de la muestra.',full?'':btn('Activar acceso completo','data-access','spark'))+
+ return heading(full?'Colorimetría':'Comparar colores',full?'Compara lecturas, interpreta desviaciones y conserva los datos del instrumento.':'Ingresa los valores CIELAB del patrón y de la muestra.',full?btn('Importar lecturas CSV','data-measure-import','file'):btn('Activar acceso completo','data-access','spark'))+
  '<form id="measure" class="panel"><div class="form-grid">'+(full?field('title','Nombre de la medición')+field('work','Trabajo o referencia de seguimiento'):'')+
  '<div><h3>Patrón</h3>'+measurementFields('p',full)+'</div><div><h3>Muestra</h3>'+measurementFields('m',full)+'</div>'+
  field('tolerance','Tolerancia ΔE','number',2,true)+field('condition','Condición de medición',['M0','M1','M2','M3'])+
@@ -236,6 +237,30 @@ function measurements(){
  field('spectral','Notas del instrumento','textarea')+'</div><div class="form-actions"><button class="primary">Calcular diferencia</button>'+
  (full?btn('Guardar medición','data-save-measure','check'):'')+'</div><p class="error" role="alert"></p><div class="result" hidden></div></form>'+
  (full?'<div class="section-head"><h2>Mediciones guardadas</h2></div><section class="panel">'+(byKind('mediciones').map(measurementRow).join('')||'<p class="empty">Aún no hay mediciones.</p>')+'</section>':'');
+}
+function instrumentImport(){
+ modal('Importar lecturas del instrumento','<form id="instrument-import"><label class="field">Archivo CSV<input type="file" name="file" accept=".csv,text/csv" required></label>'+
+  '<p class="notice">Usa dos filas, patrón y muestra. Encabezados requeridos: rol, formato, valores, iluminante, observador y condicion. Opcionales: perfil, lab_icc, densidad, filtro y reflectancia. Separa los pares espectrales con |.</p>'+
+  '<p class="notice">Puedes usar punto y coma como separador de columnas. Si usas comas, pon los valores de cada lectura entre comillas.</p>'+
+  '<div class="form-actions"><button class="primary">Validar y cargar en el formulario</button></div><p class="error" role="alert"></p></form>');
+}
+async function fillInstrumentCsv(file){
+ if(!file?.size||file.size>300000||!/\.csv$/i.test(file.name))throw new Error('Selecciona un CSV de hasta 300 KB.');
+ const data=parseInstrumentCsv(await file.text()), form=$('#measure');
+ if(!form)return;
+ const set=(key,value)=>{form.elements.namedItem(key).value=value??'';};
+ for(const [prefix,reading] of [['p',data.pattern],['m',data.sample]]){
+  set(prefix+'Format',reading.format);toggleMeasurementFormat(form.elements.namedItem(prefix+'Format'));
+  if(reading.format==='CIELAB')reading.lab.forEach((value,i)=>set(prefix+i,value));
+  else{
+   set(prefix+'Values',reading.text);set(prefix+'Profile',reading.profile);set(prefix+'IccLab',reading.iccLab);
+  }
+ }
+ const values={illuminant:data.condition,condition:data.mode,patternDensity:data.pattern.density,sampleDensity:data.sample.density,
+  densityCondition:data.filter,patternCurve:data.pattern.reflectance,sampleCurve:data.sample.reflectance};
+ for(const [key,value] of Object.entries(values))set(key,value);
+ const result=form.querySelector('.result');result.hidden=true;result.replaceChildren();
+ dialog.close();toast('Lecturas cargadas. Revísalas antes de calcular y guardar.');
 }
 function toggleMeasurementFormat(select){
  const prefix=select.name[0],format=select.value;
@@ -447,6 +472,7 @@ document.addEventListener('click',async event=>{
   }
   if(d.inventoryOpen)return inventory.open(d.inventoryOpen);
   if(d.stockMovement)return await inventory.movement(d.stockMovement);
+  if(d.measureImport!==undefined&&state.user?.fullAccess)return instrumentImport();
   if(d.measureTrend){const row=byKind('mediciones').find(r=>r.id===Number(d.measureTrend));if(row)measureTrend(row);return;}
   if(d.duplicateFormula){const row=byKind('formulas').find(r=>r.id===Number(d.duplicateFormula));if(row)await editor('formulas',row,true);return;}
   if(d.view)return navigate(d.view);
@@ -576,6 +602,11 @@ document.addEventListener('submit',async event=>{
       throw new Error('Para confirmar el lote, indica código, lote, tecnología, existencia y fecha de caducidad.');
     }
     await save({id,kind,title,value,status},kind);return;
+   }
+   case 'instrument-import':{
+    const button=event.submitter;if(button)button.disabled=true;
+    try{await fillInstrumentCsv(data.file);}finally{if(button)button.disabled=false;}
+    return;
    }
    case 'measure':measure(form);return;
    case 'simulate':simulate(form);return;
