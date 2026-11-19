@@ -2,17 +2,31 @@ const hex = bytes => Array.from(new Uint8Array(bytes), byte=>byte.toString(16).p
 const encoder = new TextEncoder();
 const hash = async value => hex(await crypto.subtle.digest('SHA-256',encoder.encode(value)));
 const random = () => hex(crypto.getRandomValues(new Uint8Array(32)));
+const preferredIterations = 600000;
+const compatibleIterations = 100000;
+async function passwordDigest(password,salt,iterations){
+ const key=await crypto.subtle.importKey('raw',encoder.encode(password),'PBKDF2',false,['deriveBits']);
+ return hex(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:encoder.encode(salt),iterations},key,256));
+}
+function iterationLimit(error){
+ return error?.name==='NotSupportedError'&&/iteration counts above/i.test(error.message);
+}
 async function passwordHash(password,salt){
- const key = await crypto.subtle.importKey('raw',encoder.encode(password),'PBKDF2',false,['deriveBits']);
- const digest = await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:encoder.encode(salt),iterations:600000},key,256);
- return 'pbkdf2:'+salt+':'+hex(digest);
+ try{return 'pbkdf2:'+salt+':'+await passwordDigest(password,salt,preferredIterations);}
+ catch(error){
+  if(!iterationLimit(error))throw error;
+  return 'pbkdf2-100k:'+salt+':'+await passwordDigest(password,salt,compatibleIterations);
+ }
 }
 async function verifyPassword(password,stored,verifyLegacy){
- if(stored && !stored.startsWith('pbkdf2:')) return verifyLegacy?.(password,stored) || false;
- const expected = stored || 'pbkdf2:dummy:'+'0'.repeat(64);
- const actual = await passwordHash(password,expected.split(':')[1]);
- let difference = actual.length ^ expected.length;
- for(let i=0;i<actual.length;i++) difference |= actual.charCodeAt(i) ^ expected.charCodeAt(i);
+ if(!stored){await passwordHash(password,'dummy');return false;}
+ const [version,salt,expected]=stored.split(':');
+ const iterations=version==='pbkdf2'?preferredIterations:version==='pbkdf2-100k'?compatibleIterations:null;
+ if(!iterations)return verifyLegacy?.(password,stored) || false;
+ if(!salt||!expected||! /^[0-9a-f]{64}$/.test(expected))return false;
+ const actual=await passwordDigest(password,salt,iterations);
+ let difference=0;
+ for(let i=0;i<64;i++)difference|=actual.charCodeAt(i)^expected.charCodeAt(i);
  return difference===0;
 }
 const now = () => new Date().toISOString();
@@ -47,6 +61,7 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
  const headers = new Headers({'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'});
  const json = (status,data) => new Response(JSON.stringify(data),{status,headers});
  const fail = (status,error) => json(status,{error});
+ let phase='session';
  try {
   if (method !== 'GET' && req.headers.get('sec-fetch-site') === 'cross-site') return fail(403,'Origen no permitido');
   const token = req.headers.get('cookie')?.match(/(?:^|;\s*)colorl=([a-f0-9]{64})(?:;|$)/)?.[1];
@@ -54,6 +69,7 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
   if (path === '/api/me' && method === 'GET') return json(200,{user:session ? profile(session) : null});
   if (['/api/login','/api/register','/api/recover','/api/reset'].includes(path) && method === 'POST') {
    const stamp = Date.now();
+   phase='rate-limit';
    if (!await allowAuth()) return fail(429,'Inténtalo de nuevo en un minuto');
    const input = await body(req);
    const {password='',key=''} = input;
@@ -90,6 +106,7 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
     return json(200,{message:'Contraseña actualizada'});
    }
    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length>254 || !validPassword) return fail(400,'Escribe un correo válido y una contraseña de 10 a 200 caracteres');
+   phase='user-lookup';
    let user = await query('SELECT '+userColumns+' FROM users WHERE email=?').get(email);
    if (path === '/api/register') {
     if (!name) return fail(400,'Escribe tu nombre');
@@ -99,6 +116,7 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
      return fail(400,'Para registrar el correo administrador, usa el código privado configurado en Cloudflare.');
     const key=administrator||!code ? null : await invitationKey(code);
     if(code&&!administrator&&(!key||!await query('SELECT 1 AS valid FROM access_invitations WHERE code_hash=? AND expires_at>? AND used_by IS NULL').get(key,stamp)))return fail(400,'El código de acceso es inválido, venció o ya se utilizó. Puedes dejarlo vacío para crear una cuenta de comparación.');
+    phase='password-derivation';
     const credential=await passwordHash(password,random()), fresh=random(), expiration=stamp+604800000;
     const params=[email,name,credential,administrator?'administrador':'laboratorista'];
     const registration=key
@@ -107,13 +125,16 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
     const statements=[['DELETE FROM sessions WHERE expires<=?',[stamp]],registration];
     if(key)statements.push(['UPDATE access_invitations SET used_by=(SELECT id FROM users WHERE email=?), used_at=? WHERE code_hash=? AND changes()=1',[email,stamp,key]]);
     statements.push(['INSERT INTO sessions(token,user_id,expires) SELECT ?,id,? FROM users WHERE email=? AND changes()=1',[await hash(fresh),expiration,email]]);
+    phase='registration-write';
     const results=await batch(statements), saved=results[1];
+    phase='registration-read';
     user=await query('SELECT '+userColumns+' FROM users WHERE email=?').get(email);
     if(!saved.changes)return user?fail(409,'Este correo ya está registrado. Inicia sesión para continuar.'):fail(400,'El código de acceso venció o ya se utilizó.');
     if(!user||!results.at(-1).changes)return fail(503,'La cuenta se creó. Intenta iniciar sesión con tu correo y contraseña.');
     headers.set('Set-Cookie','colorl='+fresh+'; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800'+secure);
     return json(200,{user:profile(user)});
    } else {
+    phase='password-verification';
     const matches = await verifyPassword(password,user?.password,verifyLegacy);
     if (!user || !matches) return fail(401,'Correo o contraseña incorrectos');
    }
@@ -262,7 +283,10 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
   if (String(error.message).includes('records_active_ink_code'))return fail(409,'Ya existe una tinta activa con ese código.');
   if (error.code==='ENOENT') return fail(404,'Archivo no disponible');
   if (error instanceof SyntaxError || error.message.startsWith('Solicitud')) return fail(400,'Solicitud inválida');
-  console.error(error.name, error.code || '');
-  return fail(500,'No se pudo completar la operación');
+  if(iterationLimit(error)&&phase==='password-verification')
+   return fail(503,'Este servidor no admite el formato de tu contraseña anterior. Contacta al administrador para restablecerla.');
+  const reference=crypto.randomUUID().slice(0,8);
+  console.error('ColorL '+path+' '+phase+' '+reference, error.name, error.code||'');
+  return fail(500,'No se pudo completar la operación. Referencia: '+reference);
  }
 }
