@@ -30,3 +30,15 @@ La rama `colorl-app` incluye un Cloudflare Worker que sirve la interfaz y la API
 4. Guarda y despliega. Abre el dominio `workers.dev` que muestre el Worker. Comprueba que puedes crear una cuenta, guardar un registro y volver a verlo al iniciar sesión.
 
 Si vas a usar los permisos de administración o la recuperación por correo, configura las variables y secretos descritos arriba en **Settings → Variables and Secrets** del Worker. La base D1 se crea vacía. La publicación no copia los datos de la instancia SQLite local. Las copias en producción se administran mediante D1, y el usuario puede seguir exportando sus registros desde ColorL.
+
+## Formulación con tus tintas
+
+En **Catálogo de tintas**, agrega tus productos o importa fichas PDF, Excel `.xlsx`, CSV o imágenes. El navegador extrae texto o aplica OCR en español e inglés. Confirma los códigos, la tecnología y las existencias antes de guardar. Se conservan el archivo original y el texto revisado en la cuenta. Los documentos admiten hasta 1 MB, 20 páginas de PDF o 20 tintas por archivo. Los PDF e imágenes con maquetación compleja pueden requerir corrección manual.
+
+En **Caracterización**, registra CIELAB, componentes y gramos, sustrato, anilox, BCM real, condición de medición e iluminante. Conserva el orden de incorporación y el procedimiento en el ensayo. Para los ajustes registra también la medición inicial y las cantidades añadidas. Solo los ensayos marcados como verificados alimentan la búsqueda. Una fórmula aprobada aporta contexto cuando se vincula con un ensayo medido.
+
+En **Igualación inteligente**, selecciona un patrón guardado con CIELAB o ingresa un objetivo manual. Las propuestas reutilizan mezclas medidas en condiciones compatibles, se ordenan por diferencia ΔE₀₀ y se escalan al lote solicitado. Para correcciones, la herramienta solo reutiliza dosis observadas en mezclas iniciales equivalentes. La diferencia estimada se contrasta con la siguiente medición. Las alternativas corresponden a otras mezclas completas ensayadas con tintas disponibles. Las curvas de reflectancia se conservan y visualizan como evidencia. Esta versión no calcula mezclas predictivas a partir de curvas de reflectancia.
+
+El diagnóstico filtra productos con una ficha confirmada, un rango de dosificación y coincidencias explícitas para la tecnología, familia, sustrato y objetivo. Añade esos datos al editar el producto. Las existencias opcionales en gramos sirven para filtrar propuestas. Actualízalas en el catálogo cuando cambien.
+
+Para el desarrollo local ejecuta `npm ci` antes de `npm start`. La instalación prepara los lectores de PDF, Excel y OCR como archivos del sitio. Workers Builds ejecuta esta instalación en Cloudflare. Conserva el comando de despliegue que aplica las migraciones D1 antes de publicar. Ejecuta `npm test` para verificar importación tabular y reglas de formulación, corrección y diagnóstico.

@@ -1,1 +1,22 @@
-{"name":"colorl","version":"1.0.0","private":true,"type":"module","engines":{"node":">=24"},"scripts":{"start":"node server.js","backup":"node scripts/backup.js"}}
+{
+  "name": "colorl",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "backup": "node scripts/backup.js",
+    "postinstall": "node scripts/catalog-assets.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
+    "@tesseract.js-data/spa": "1.0.0",
+    "exceljs": "4.4.0",
+    "pdfjs-dist": "6.5.438",
+    "tesseract.js": "7.0.0"
+  }
+}

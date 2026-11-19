@@ -14,3 +14,6 @@ main{max-width:1580px;margin:auto;padding:25px 31px 40px;animation:appear .25s e
 @media(max-width:380px){.hero-content{padding:17px}.hero h1{font-size:35px}.form-grid{grid-template-columns:1fr}.section-head .tag{display:none}}
 @media print{.sidebar,.topbar,button,dialog,#toast{display:none!important}.shell{margin:0}body,main,.panel{background:#fff;color:#000;box-shadow:none}}
 .text-button{display:inline-flex;align-items:center;gap:4px}.text-button svg{width:13px;height:13px}
+.lab-actions{margin-bottom:14px}.lab-detail{margin-bottom:13px}.lab-detail summary{font:700 17px var(--display);cursor:pointer}.lab-detail form{margin-top:14px}.lab-candidate{padding:12px 0;border-bottom:1px solid var(--line)}.lab-candidate:last-child{border-bottom:0}.lab-candidate p{margin:5px 0}.lab-list{padding-left:22px;margin:8px 0 12px}.import-row{margin:10px 0;box-shadow:none}.catalog-text{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 var(--font)}
+
+.lab-spectrum{max-width:620px;margin:12px 0}.lab-spectrum svg{width:100%;height:auto;color:var(--muted);font:11px var(--font)}.lab-spectrum figcaption{display:flex;gap:14px}

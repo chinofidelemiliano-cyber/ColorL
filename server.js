@@ -2,14 +2,15 @@ import http from 'node:http';
 import { Readable } from 'node:stream';
 import { DatabaseSync } from 'node:sqlite';
 import { scryptSync, timingSafeEqual } from 'node:crypto';
-import { readFile, mkdir } from 'node:fs/promises';
+import { readFile, mkdir, readdir } from 'node:fs/promises';
 import { handleApi } from './api.js';
 
 const directory = process.env.DATA_DIR || 'data';
 await mkdir(directory, { recursive: true, mode: 0o700 });
 const db = new DatabaseSync(directory + '/colorl.sqlite');
 db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
-db.exec(await readFile(new URL('./migrations/0001_initial.sql',import.meta.url),'utf8'));
+const migrations = new URL('./migrations/',import.meta.url);
+for(const file of (await readdir(migrations)).filter(name=>name.endsWith('.sql')).sort()) db.exec(await readFile(new URL(file,migrations),'utf8'));
 const query = sql => db.prepare(sql);
 function batch(statements){
  db.exec('BEGIN');
@@ -35,8 +36,8 @@ function allowAuth(ip){
  rates.set(ip,rate);
  return ++rate.count<=25;
 }
-const files = {'/':'index.html','/styles.css':'styles.css','/app.js':'app.js','/hero.webp':'hero.webp','/hero.png':'hero.png'};
-const mime = {html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',webp:'image/webp',png:'image/png'};
+const files = {'/':'index.html','/styles.css':'styles.css','/app.js':'app.js','/lab.js':'lab.js','/lab-model.js':'lab-model.js','/catalog-import.js':'catalog-import.js','/hero.webp':'hero.webp','/hero.png':'hero.png'};
+const mime = {html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',mjs:'text/javascript; charset=utf-8',wasm:'application/wasm',webp:'image/webp',png:'image/png'};
 
 
 http.createServer(async (request,response)=>{
@@ -49,10 +50,11 @@ http.createServer(async (request,response)=>{
    response.writeHead(result.status,Object.fromEntries(result.headers));
    return response.end(Buffer.from(await result.arrayBuffer()));
   }
-  const file = Object.hasOwn(files,url.pathname) && files[url.pathname];
+  const vendor = /^\/vendor\/(?:[\w-]+\/)?[\w.-]+$/.test(url.pathname) && !url.pathname.includes('..');
+  const file = vendor ? url.pathname.slice(1) : Object.hasOwn(files,url.pathname) && files[url.pathname];
   if(!file || request.method!=='GET'){response.writeHead(404);return response.end();}
   const content = await readFile(new URL('./public/'+file,import.meta.url));
-  response.writeHead(200,{'Content-Type':mime[file.split('.').pop()],'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'});
+  response.writeHead(200,{'Content-Type':mime[file.split('.').pop()] || 'application/octet-stream','X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin'});
   response.end(content);
  } catch(error) {
   response.writeHead(error.code==='ENOENT'?404:500);

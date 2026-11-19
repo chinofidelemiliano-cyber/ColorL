@@ -1,3 +1,4 @@
+import { createLab } from './lab.js';
 const paths={
  home:'<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-6h6v6"/>', flask:'<path d="M9 3h6m-5 0v7L4 19a1 1 0 0 0 1 2h14a1 1 0 0 0 1-2l-6-9V3M7 15h10"/>',
  palette:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v5m0 8v5M3 12h5m8 0h5"/>', chart:'<path d="M3 3v18h18M6 15l4-4 4 3 6-8"/>', sliders:'<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="10" cy="18" r="2" fill="currentColor"/>',
@@ -13,7 +14,7 @@ const swatch = color => '<div class="swatch" style="--ink:'+shade(color)+'"></di
 const btn = (label,attrs='',icon='',kind='secondary') => '<button type="button" class="'+kind+'" '+attrs+'>'+ (icon ? I(icon) : '')+esc(label)+'</button>';
 const navGroups = [
  ['GENERAL',[['inicio','Panel de inicio','home']]],
- ['LABORATORIO',[['formulas','Formulación','flask'],['colores','Biblioteca de colores','palette'],['mediciones','Colorimetría','chart'],['correcciones','Simulador y corrección','sliders'],['asistente','Asistente técnico','spark']]],
+ ['LABORATORIO',[['formulas','Formulación','flask'],['igualacion','Igualación inteligente','spark'],['tintas','Catálogo de tintas','drop'],['caracterizaciones','Caracterización','sliders'],['colores','Biblioteca de colores','palette'],['mediciones','Colorimetría','chart'],['correcciones','Simulador y corrección','sliders'],['asistente','Asistente técnico','spark']]],
  ['GESTIÓN',[['inventario','Inventario de tintas','box'],['anilox','Inventario de anilox','grid'],['historial','Historial y reportes','history']]],
  ['RECURSOS',[['academia','Academia','book'],['componentes','Biblioteca técnica','file'],['calculadoras','Calculadoras','calc']]]
 ];
@@ -53,7 +54,7 @@ function render(){
  $('#workspace-label').textContent=state.user ? 'Espacio personal' : 'Espacio de demostración';
  $('#profile').innerHTML='<span class="avatar">'+esc(initials)+'</span><span><strong>'+esc(state.user?.name || 'Usuario invitado')+'</strong><small>'+esc(state.user?.role || 'Iniciar sesión')+'</small></span>'+I('chevron');
  $('#account').textContent=initials;
- const content={inicio:dashboard,mediciones:measurements,correcciones:simulation,asistente:assistant,academia:academy,calculadoras:calculators,historial:reports,usuarios:users};
+ const content={...lab.views,inicio:dashboard,mediciones:measurements,correcciones:simulation,asistente:assistant,academia:academy,calculadoras:calculators,historial:reports,usuarios:users};
  $('#main').innerHTML=(content[state.view] || (()=>collection(state.view)))();
  initializeTheme();
  if(state.view==='inicio') chart();
@@ -135,6 +136,7 @@ const descriptions={colores:'Patrones propios, referencias Pantone y favoritos.'
 function collection(kind){
  const records=byKind(kind);
  return heading(views[kind].label,descriptions[kind],btn('Nuevo registro','data-new="'+kind+'"','plus','primary'))+
+ (kind==='formulas'?'<div class="form-actions lab-actions">'+btn('Buscar una fórmula con mis tintas','data-view="igualacion"','spark')+'</div>':'')+
  '<section class="panel"><input class="filter" id="filter" type="search" aria-label="Filtrar registros" placeholder="Filtrar por nombre, referencia o estado…"><div class="table-scroll"><table class="table"><thead><tr><th>Nombre</th><th>Referencia</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>'+records.map(r=>'<tr data-filter="'+esc([r.title,r.status,Object.values(r.value).join(' ')].join(' ').toLowerCase())+'"><td><div style="display:flex;align-items:center;gap:9px">'+swatch(r.value.color)+esc(r.title)+'</div></td><td>'+esc(r.value.target || r.value.code || r.value.lot || '—')+'</td><td>'+statusTag(r.status)+'</td><td>'+btn('Abrir','data-edit="'+r.id+'"','chevron','text-button')+'</td></tr>').join('')+'</tbody></table></div><p class="empty" id="no-results" '+(records.length?'hidden':'')+'>No hay registros que mostrar.</p></section>'+
  (kind==='colores'?'<p class="notice">Las referencias se registran manualmente. Una biblioteca oficial Pantone requiere licencia. Las muestras en pantalla son aproximaciones sRGB.</p>':'');
 }
@@ -225,7 +227,8 @@ function measure(form){
 }
 function simulation(){
  const options=byKind('mediciones').map(r=>'<option value="'+r.id+'">'+esc(r.title)+'</option>').join('');
- return heading('Simulador y corrección','Compara una prueba medida con su patrón antes de ajustar el lote.')+'<form class="panel" id="simulate"><div class="form-grid"><label class="field">Medición guardada<select name="measurement" required><option value="">Seleccionar</option>'+options+'</select></label>'+field('change','Ajuste aplicado en la prueba')+'<div class="wide"><h3>Medición después del ajuste</h3><div class="form-grid">'+labFields('s')+'</div></div></div><p class="notice">Mide la prueba en las mismas condiciones. Sin caracterización compatible no hay base para estimar el efecto de añadir pigmento.</p><div class="form-actions"><button class="primary">Comparar prueba</button>'+btn('Guardar corrección','data-save-correction','check')+'</div><p class="error"></p><div class="result" hidden></div></form><div class="section-head"><h2>Correcciones guardadas</h2></div><section class="panel">'+(byKind('correcciones').map(recordRow).join('')||'<p class="empty">Aún no hay correcciones.</p>')+'</section>';
+ return heading('Simulador y corrección','Compara una prueba medida con su patrón antes de ajustar el lote.')+
+ '<div class="form-actions lab-actions">'+btn('Buscar correcciones con mis tintas','data-view="igualacion"','spark')+'</div>'+'<form class="panel" id="simulate"><div class="form-grid"><label class="field">Medición guardada<select name="measurement" required><option value="">Seleccionar</option>'+options+'</select></label>'+field('change','Ajuste aplicado en la prueba')+'<div class="wide"><h3>Medición después del ajuste</h3><div class="form-grid">'+labFields('s')+'</div></div></div><p class="notice">Mide la prueba en las mismas condiciones. Sin caracterización compatible no hay base para estimar el efecto de añadir pigmento.</p><div class="form-actions"><button class="primary">Comparar prueba</button>'+btn('Guardar corrección','data-save-correction','check')+'</div><p class="error"></p><div class="result" hidden></div></form><div class="section-head"><h2>Correcciones guardadas</h2></div><section class="panel">'+(byKind('correcciones').map(recordRow).join('')||'<p class="empty">Aún no hay correcciones.</p>')+'</section>';
 }
 function simulate(form){
  if(!form.reportValidity())return;
@@ -312,6 +315,10 @@ document.addEventListener('click',async event=>{
  const el=event.target.closest('button');if(!el)return;
  try{
   const d=el.dataset;
+  if(Object.keys(d).some(key=>key.startsWith('lab'))){
+   el.disabled=true;
+   try{if(await lab.click(el))return;}finally{el.disabled=el.dataset.saved==='true';}
+  }
   if(d.view)return navigate(d.view);
   if(d.close!==undefined)return dialog.close();
   if(d.new)return await editor(d.new);
@@ -349,6 +356,12 @@ document.addEventListener('submit',async event=>{
  const form=event.target;event.preventDefault();const data=formData(form), error=$('.error',form);
  if(error)error.textContent='';
  try{
+  if(form.dataset.lab){
+   const button=event.submitter;
+   if(button)button.disabled=true;
+   try{await lab.submit(form);}finally{if(button)button.disabled=false;}
+   return;
+  }
   switch(form.id){
    case 'auth-form':{
     const result=await api(form.dataset.mode,data);
@@ -361,7 +374,9 @@ document.addEventListener('submit',async event=>{
     const kind=form.dataset.kind, id=Number(form.dataset.id)||undefined, status=kind==='formulas'?event.submitter?.value||'Borrador':'Registrada';
     if(kind==='formulas' && status==='En revisión')recipe(data);
     await flushDraft();
-    const {title,...value}=data;if(kind==='colores')value.favorite=data.favorite==='on';
+    const {title,...fields}=data;
+    const previous=state.records.find(r=>r.id===id)?.value;
+    const value={...previous,...fields};if(kind==='colores')value.favorite=data.favorite==='on';
     await save({id,kind,title,value,status},kind);return;
    }
    case 'measure':measure(form);return;
@@ -410,6 +425,7 @@ document.addEventListener('change',event=>{if(event.target.id==='chart-days'){st
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();search();}});
 dialog.addEventListener('close',flushDraft);
 window.addEventListener('popstate',()=>navigate(views[location.hash.slice(1)]?location.hash.slice(1):'inicio'));
+const lab=createLab({state,esc,field,heading,btn,modal,auth,api,refresh,render,toast,statusTag,delta:(pattern,sample)=>differences(pattern,sample).e[0]});
 const initial=location.hash.slice(1);
 if(views[initial]&&initial!=='usuarios')state.view=initial;
 render();
