@@ -1,6 +1,6 @@
 # ColorL
 
-Laboratorio digital de color para impresión flexográfica. El panel de invitado muestra datos de ejemplo. Las cuentas nuevas empiezan con su propio espacio vacío.
+Laboratorio digital de color para impresión flexográfica. ColorL requiere iniciar sesión. Las cuentas nuevas sin código pueden comparar colores. Las cuentas invitadas tienen su propio espacio de laboratorio.
 
 ## Desarrollo
 
@@ -8,7 +8,17 @@ Requiere Node.js 24 o posterior. Ejecuta `npm start` en la raíz. La aplicación
 
 ## Cuentas y permisos
 
-Para crear el primer administrador, configura `ADMIN_EMAIL` y un `ADMIN_INVITE` aleatorio antes de registrar la cuenta. Escribe el código en el campo de invitación del registro. Retira la variable de invitación una vez creada la cuenta. El panel Administración asigna roles. Supervisor y administrador pueden aprobar fórmulas enviadas a revisión y publicarlas en la biblioteca compartida de la instancia.
+### Crear o recuperar el acceso del administrador
+
+1. En Cloudflare, abre el Worker **colorlab → Settings → Variables and Secrets**. Define `ADMIN_EMAIL` con el correo del propietario y `ADMIN_INVITE` como secreto con un valor aleatorio privado. Puedes generar un valor de 32 caracteres con el gestor de contraseñas del navegador. Guarda los cambios.
+2. Si aún no tienes cuenta, usa ese correo y el secreto privado en el campo de código del registro. Si ya tienes cuenta, inicia sesión con tu contraseña y escribe el secreto en **Mi perfil → Activar código de acceso**.
+3. Cuando aparezca **Administración**, elimina `ADMIN_INVITE` de Cloudflare para cerrar el acceso de configuración inicial. El rol administrador permanece en la cuenta.
+
+### Invitar usuarios al laboratorio
+
+En **Administración → Generar código de acceso**, copia y comparte un código por persona. El código concede acceso de laboratorio durante toda la vigencia de la cuenta. Puede usarse una sola vez y vence a los siete días si nadie lo canjea. El registro admite el código opcional. Una cuenta existente puede activarlo en **Mi perfil → Activar código de acceso**.
+
+Una cuenta sin código solo puede comparar colores. Los registros de cuentas existentes se conservan y vuelven a estar disponibles al canjear una invitación. Las cuentas que ya eran administradoras mantienen ese acceso. El menú de Administración se reserva para administradores. Supervisor y administrador pueden aprobar fórmulas y publicarlas en la biblioteca compartida.
 
 La recuperación de contraseña necesita `RECOVERY_WEBHOOK`, una URL del servicio que envía por correo el código de recuperación. El servidor le envía un POST JSON con `email` y `token`. El código vence en 30 minutos. Si el servicio exige autenticación, configura `RECOVERY_SECRET` para enviar un encabezado Bearer.
 

@@ -19,27 +19,24 @@ const navGroups = [
  ['RECURSOS',[['academia','Academia','book'],['componentes','Biblioteca técnica','file'],['calculadoras','Calculadoras','calc']]]
 ];
 const views=Object.fromEntries(navGroups.flatMap(([,items])=>items.map(([key,label,icon])=>[key,{label,icon}]))); views.usuarios={label:'Administración',icon:'grid'};
-const demo=[
- {id:-1,kind:'formulas',title:'Azul océano',value:{color:'#4285e7',target:'Ref. CL-072 · Base agua',batch:'1000',components:'Vehículo: 90\nAzul: 10'},status:'Aprobada'},
- {id:-2,kind:'formulas',title:'Magenta eléctrico',value:{color:'#d43d9a',target:'Ref. CL-219 · UV',batch:'500',components:'Vehículo: 90\nMagenta: 10'},status:'En revisión'},
- {id:-3,kind:'formulas',title:'Turquesa profundo',value:{color:'#39bfba',target:'Ref. CL-326 · Base agua',batch:'800',components:'Vehículo: 90\nTurquesa: 10'},status:'Aprobada'},
- {id:-4,kind:'colores',title:'Turquesa laboratorio',value:{color:'#39bfba',target:'CL-326',favorite:true},status:'Registrada'},
- {id:-5,kind:'colores',title:'Magenta laboratorio',value:{color:'#d43d9a',target:'CL-219',favorite:true},status:'Registrada'}
-];
-const state={user:null,view:'inicio',records:demo,theme:localStorage.getItem('colorl-theme')==='light'?'light':'dark',chartDays:7,chat:[]};
+const state={user:null,view:'inicio',records:[],theme:localStorage.getItem('colorl-theme')==='light'?'light':'dark',chartDays:7,chat:[]};
 const dialog=$('#dialog'), modalBody=$('#dialog-body');
 let resizeChart, toastTimer, draftTimer, draftPending, draftWrite=Promise.resolve();
 function toast(message){$('#toast').textContent=message;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').textContent='',3500);}
 async function api(path,data) {
  const response=await fetch('/api/'+path, data===undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
- const result=await response.json();
- if(!response.ok) throw new Error(result.error);
+ const result=await response.json().catch(()=>null);
+ if(!response.ok || !result)throw new Error(result?.error||'El servidor de ColorL no respondió correctamente. Intenta de nuevo.');
+
  return result;
 }
 const byKind=kind=>state.records.filter(r=>r.kind===kind);
 function initializeTheme(){document.documentElement.dataset.theme=state.theme;$('#theme').innerHTML=I(state.theme==='dark'?'sun':'moon');}
+const availableView=view=>Boolean(state.user&&Object.hasOwn(views,view)&&(state.user.fullAccess?(view!=='usuarios'||state.user.role==='administrador'):view==='mediciones'));
+const defaultView=()=>state.user?.fullAccess?'inicio':'mediciones';
 function navigate(view){
- if(!views[view] || (view==='usuarios' && state.user?.role!=='administrador')) return;
+ if(!state.user)return;
+ if(!availableView(view))view=defaultView();
  state.view=view;
  if(location.hash!=='#'+view) history.pushState(null,'','#'+view);
  $('#sidebar').classList.remove('open');
@@ -47,12 +44,21 @@ function navigate(view){
 }
 function render(){
  resizeChart?.disconnect();
- $('#crumb').textContent=views[state.view].label;
- const groups=state.user?.role==='administrador' ? [...navGroups,['EQUIPO',[['usuarios','Administración','grid']]]] : navGroups;
+ document.body.classList.toggle('access-locked',!state.user);
+ initializeTheme();
+ if(!state.user){$('#main').replaceChildren();$('#nav').replaceChildren();auth('login');return;}
+ $('#access-gate').replaceChildren();
+ if(!availableView(state.view))state.view=defaultView();
+ const full=state.user.fullAccess;
+ $('#crumb').textContent=full?views[state.view].label:'Comparar colores';
+ const groups=!full ? [['HERRAMIENTAS',[['mediciones','Comparar colores','chart']]]] :
+  state.user.role==='administrador' ? [...navGroups,['EQUIPO',[['usuarios','Administración','grid']]]] : navGroups;
+ $('#search').hidden=!full;
+ $('#notification').hidden=!full;
  $('#nav').innerHTML=groups.map(([name,items])=>'<span class="nav-heading">'+name+'</span>'+items.map(([key,label,icon])=>'<button class="nav-btn '+(key===state.view?'active':'')+'" '+(key===state.view?'aria-current="page"':'')+' data-view="'+key+'">'+I(icon)+label+'</button>').join('')).join('');
  const initials=state.user?.name.split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase() || 'CL';
- $('#workspace-label').textContent=state.user ? 'Espacio personal' : 'Espacio de demostración';
- $('#profile').innerHTML='<span class="avatar">'+esc(initials)+'</span><span><strong>'+esc(state.user?.name || 'Usuario invitado')+'</strong><small>'+esc(state.user?.role || 'Iniciar sesión')+'</small></span>'+I('chevron');
+ $('#workspace-label').textContent=full?'Espacio personal':'Acceso de comparación';
+ $('#profile').innerHTML='<span class="avatar">'+esc(initials)+'</span><span><strong>'+esc(state.user?.name || 'Usuario invitado')+'</strong><small>'+esc(full?state.user.role:'Comparación')+'</small></span>'+I('chevron');
  $('#account').textContent=initials;
  const content={...lab.views,inicio:dashboard,mediciones:measurements,correcciones:simulation,asistente:assistant,academia:academy,calculadoras:calculators,historial:reports,usuarios:users};
  $('#main').innerHTML=(content[state.view] || (()=>collection(state.view)))();
@@ -186,9 +192,10 @@ async function editor(kind,r){
 }
 const labFields=(prefix,values=[])=>['L*','a*','b*'].map((label,i)=>field(prefix+i,label,'number',values[i],true)).join('');
 function measurements(){
- return heading('Colorimetría','Compara CIELAB, interpreta desviaciones y registra resultados.')+
- '<form id="measure" class="panel"><div class="form-grid"><div class="wide">'+field('title','Nombre de la medición','text','',true)+'</div><div><h3>Patrón</h3><div class="form-grid">'+labFields('p')+'</div></div><div><h3>Muestra</h3><div class="form-grid">'+labFields('m')+'</div></div>'+field('tolerance','Tolerancia ΔE','number',2,true)+field('condition','Condición de medición',['M0','M1','M2','M3'])+field('illuminant','Iluminante / observador','text','D50 / 2°')+field('method','Método',['ΔE 2000','ΔE 76','ΔE 94 (artes gráficas)','CMC (2:1)'])+field('spectral','Reflectancia, densidad, condiciones o notas de instrumento','textarea')+'</div><div class="form-actions"><button class="primary">Calcular diferencia</button>'+btn('Guardar medición','data-save-measure','check')+'</div><p class="error"></p><div class="result" hidden></div></form>'+
- '<div class="section-head"><h2>Mediciones guardadas</h2></div><section class="panel">'+(byKind('mediciones').map(recordRow).join('')||'<p class="empty">Aún no hay mediciones.</p>')+'</section>';
+ const full=state.user.fullAccess;
+ return heading(full?'Colorimetría':'Comparar colores',full?'Compara CIELAB, interpreta desviaciones y registra resultados.':'Ingresa los valores CIELAB del patrón y de la muestra.',full?'':btn('Activar acceso completo','data-access','spark'))+
+ '<form id="measure" class="panel"><div class="form-grid">'+(full?'<div class="wide">'+field('title','Nombre de la medición','text','')+'</div>':'')+'<div><h3>Patrón</h3><div class="form-grid">'+labFields('p')+'</div></div><div><h3>Muestra</h3><div class="form-grid">'+labFields('m')+'</div></div>'+field('tolerance','Tolerancia ΔE','number',2,true)+field('condition','Condición de medición',['M0','M1','M2','M3'])+field('illuminant','Iluminante / observador','text','D50 / 2°')+field('method','Método',['ΔE 2000','ΔE 76','ΔE 94 (artes gráficas)','CMC (2:1)'])+field('spectral','Reflectancia, densidad, condiciones o notas de instrumento','textarea')+'</div><div class="form-actions"><button class="primary">Calcular diferencia</button>'+(full?btn('Guardar medición','data-save-measure','check'):'')+'</div><p class="error"></p><div class="result" hidden></div></form>'+
+ (full?'<div class="section-head"><h2>Mediciones guardadas</h2></div><section class="panel">'+(byKind('mediciones').map(recordRow).join('')||'<p class="empty">Aún no hay mediciones.</p>')+'</section>':'');
 }
 const hue=(a,b)=>(Math.atan2(b,a)*180/Math.PI+360)%360;
 const cos=d=>Math.cos(d*Math.PI/180), sin=d=>Math.sin(d*Math.PI/180);
@@ -267,29 +274,55 @@ function calculators(){
 function reports(){
  return heading('Historial y reportes','Consulta la actividad y exporta los datos de tu laboratorio.',btn('Imprimir / PDF','data-print','file'))+'<div class="form-actions" style="margin-bottom:15px">'+btn('Exportar JSON','data-export="json"','file','primary')+btn('Exportar CSV','data-export="csv"','file')+btn('Ver modificaciones','data-history','history')+'</div><section class="panel"><h2>Actividad reciente</h2>'+(state.records.map(recordRow).join('')||'<p class="empty">Aún no hay actividad.</p>')+'</section>';
 }
-function users(){return heading('Administración','Gestiona permisos y asignaciones del equipo.')+'<section class="panel" id="users-list"><p class="empty">Cargando usuarios…</p></section>';}
+function users(){return heading('Administración','Gestiona permisos y asignaciones del equipo.',btn('Generar código de acceso','data-invite','plus','primary'))+
+ '<section class="panel" id="invitation-output" hidden aria-live="polite"></section><section class="panel" id="users-list"><p class="empty">Cargando usuarios…</p></section>';}
 async function loadUsers(){
  const list=$('#users-list');
  try{
   const people=await api('users');
-  list.innerHTML=people.map(person=>'<form class="record-row" data-user="'+person.id+'"><div><strong>'+esc(person.name)+'</strong><small>'+esc(person.email)+'</small></div>'+(person.id===state.user.id?statusTag(person.role):field('role','Rol',['administrador','supervisor','laboratorista','operador','estudiante'],person.role)+'<button class="secondary">Guardar</button>')+'</form>').join('');
+  list.innerHTML=people.map(person=>'<form class="record-row" data-user="'+person.id+'"><div><strong>'+esc(person.name)+'</strong><small>'+esc(person.email)+' · '+(person.fullAccess?'Acceso completo':'Comparar colores')+'</small></div>'+(person.id===state.user.id?statusTag(person.role):field('role','Rol',['administrador','supervisor','laboratorista','operador','estudiante'],person.role)+'<button class="secondary">Guardar</button>')+'</form>').join('');
  }catch(error){list.textContent=error.message;}
 }
 function auth(mode='login'){
  if(state.user){
-  return modal('Mi perfil','<form id="profile-form"><div class="form-grid">'+field('name','Nombre','text',state.user.name,true)+field('theme','Tema',['dark','light'],state.theme)+'</div><p class="notice">'+esc(state.user.email)+' · '+esc(state.user.role)+'</p><div class="form-actions"><button class="primary">Guardar perfil</button>'+btn('Cerrar sesión','data-logout')+'</div><p class="error"></p></form>');
+  return modal('Mi perfil','<form id="profile-form"><div class="form-grid">'+field('name','Nombre','text',state.user.name,true)+field('theme','Tema',['dark','light'],state.theme)+'</div><p class="notice">'+esc(state.user.email)+' · '+esc(state.user.fullAccess?state.user.role:'Comparar colores')+'</p><div class="form-actions"><button class="primary">Guardar perfil</button>'+
+   (state.user.role!=='administrador'?btn('Activar código de acceso','data-access'):'')+btn('Cerrar sesión','data-logout')+'</div><p class="error"></p></form>');
  }
  const title={login:'Iniciar sesión',register:'Crear cuenta',recover:'Recuperar contraseña',reset:'Cambiar contraseña'}[mode];
- modal(title,'<form id="auth-form" data-mode="'+mode+'"><div class="form-grid">'+(mode==='register'?field('name','Nombre','text','',true):'')+(mode!=='reset'?field('email','Correo electrónico','email','',true):field('key','Código recibido','text','',true))+(mode!=='recover'?field('password','Contraseña (mínimo 10 caracteres)','password','',true):'')+(mode==='register'?'<details class="wide"><summary>Invitación de administrador</summary>'+field('invite','Código de invitación','password')+'</details>':'')+'</div><div class="form-actions"><button class="primary">'+title+'</button>'+ (mode==='login'?btn('Crear cuenta','data-auth="register"')+btn('Olvidé mi contraseña','data-auth="recover"','','text-button'):btn('Volver a iniciar sesión','data-auth="login"'))+(mode==='recover'?btn('Ya tengo un código','data-auth="reset"'):'')+'</div><p class="error" role="alert"></p></form>');
+ $('#access-gate').innerHTML='<section class="access-card panel"><div class="brand access-brand"><span class="brand-icon"><i></i></span><span><strong>Color<span class="accent">L</span></strong><small>LABORATORIO DIGITAL</small></span></div><h1>'+title+'</h1><form id="auth-form" data-mode="'+mode+'"><div class="form-grid">'+
+  (mode==='register'?field('name','Nombre','text','',true):'')+(mode!=='reset'?field('email','Correo electrónico','email','',true):field('key','Código recibido','text','',true))+
+  (mode!=='recover'?field('password','Contraseña (mínimo 10 caracteres)','password','',true):'')+
+  (mode==='register'?field('invite','Código de acceso al laboratorio (opcional)','password')+'</div><p class="notice">Puedes crear una cuenta sin código para comparar colores. Una invitación activa las herramientas del laboratorio.</p>':'</div>')+
+  '<div class="form-actions"><button class="primary">'+title+'</button>'+ (mode==='login'?btn('Crear cuenta','data-auth="register"')+btn('Olvidé mi contraseña','data-auth="recover"','','text-button'):btn('Volver a iniciar sesión','data-auth="login"'))+(mode==='recover'?btn('Ya tengo un código','data-auth="reset"'):'')+'</div><p class="error" role="alert"></p></form></section>';
+ const form=$('#auth-form');
+ const email=form.elements.namedItem('email'), password=form.elements.namedItem('password');
+ if(email)email.autocomplete='email';
+ if(password){password.autocomplete=mode==='login'?'current-password':'new-password';password.minLength=10;password.maxLength=200;}
+}
+function accessModal(){
+ if(!state.user)return;
+ modal('Activar código de acceso','<form id="access-form">'+field('code','Código de acceso','password','',true)+'<div class="form-actions"><button class="primary">Activar código</button></div><p class="error" role="alert"></p></form>');
 }
 async function refresh(){
- state.records=state.user ? await api('records') : demo;
+ state.records=state.user?.fullAccess ? await api('records') : [];
+}
+async function enterAccount(user,preferred=location.hash.slice(1)){
+ state.user=user;
+ state.theme=user.theme;
+ localStorage.setItem('colorl-theme',state.theme);
+ let failure;
+ try{await refresh();}catch(error){state.records=[];failure=error.message;}
+ const view=availableView(preferred)?preferred:defaultView();
+ if(location.hash!=='#'+view)history.replaceState(null,'','#'+view);
+ navigate(view);
+ if(failure)toast(failure);
 }
 async function save(record, view){
  if(!state.user){auth();return;}
  await api('records',record);await refresh();if(view)navigate(view);else render();toast('Registro guardado');
 }
 function search(){
+ if(!state.user?.fullAccess)return;
  modal('Buscar en ColorL','<input id="global-query" type="search" placeholder="Colores, fórmulas, mediciones o módulos…" aria-label="Buscar"><div id="global-results"></div>');
  $('#global-query').focus();searchResults('');
 }
@@ -324,9 +357,27 @@ document.addEventListener('click',async event=>{
   if(d.new)return await editor(d.new);
   if(d.edit){const r=state.records.find(r=>r.id===Number(d.edit));if(r)return await editor(r.kind,r);}
   if(d.auth)return auth(d.auth);
-  if(d.logout!==undefined){await flushDraft();await api('logout',{});state.user=null;state.chat=[];await refresh();navigate('inicio');return;}
+  if(d.access!==undefined)return accessModal();
+  if(d.invite!==undefined){
+   el.disabled=true;
+   try{
+    const {code,expires}=await api('invitations',{});
+    const panel=$('#invitation-output');
+    panel.hidden=false;
+    panel.innerHTML='<h2>Código de acceso</h2><p class="notice">Compártelo con una persona. Tiene un solo uso y vence el '+esc(new Date(expires).toLocaleDateString('es-MX'))+'.</p>'+
+     '<input readonly id="invitation-code" value="'+esc(code)+'" aria-label="Código generado">'+
+     '<div class="form-actions">'+btn('Copiar código','data-copy-invite')+'</div>';
+   }finally{el.disabled=false;}
+   return;
+  }
+  if(d.copyInvite!==undefined){
+   const field=$('#invitation-code');field.select();
+   if(navigator.clipboard){await navigator.clipboard.writeText(field.value);toast('Código copiado');}
+   return;
+  }
+  if(d.logout!==undefined){await flushDraft();await api('logout',{});state.user=null;state.chat=[];state.records=[];dialog.close();history.replaceState(null,'',location.pathname);render();return;}
   if(d.scale!==undefined){const form=$('#editor'),result=$('.result',form);$('.error',form).textContent='';result.innerHTML=recipe(formData(form));result.hidden=false;return;}
-  if(d.saveMeasure!==undefined){const v=measure($('#measure'));if(v)await save({kind:'mediciones',title:v.title,value:v,status:'Registrada'});return;}
+  if(d.saveMeasure!==undefined){const v=measure($('#measure'));if(v)await save({kind:'mediciones',title:v.title?.trim()||'Comparación de color',value:v,status:'Registrada'});return;}
   if(d.saveCorrection!==undefined){const v=simulate($('#simulate'));if(v)await save({kind:'correcciones',title:v.title,value:v,status:'Registrada'});return;}
   if(d.export)return await exportRecords(d.export);
   if(d.print!==undefined)return print();
@@ -364,9 +415,20 @@ document.addEventListener('submit',async event=>{
   }
   switch(form.id){
    case 'auth-form':{
-    const result=await api(form.dataset.mode,data);
-    if(result.user){state.user=result.user;state.theme=result.user.theme;localStorage.setItem('colorl-theme',state.theme);await refresh();dialog.close();render();toast('Sesión iniciada');}
-    else toast(result.message);
+    const button=event.submitter;
+    if(button)button.disabled=true;
+    try{
+     const result=await api(form.dataset.mode,data);
+     if(result.user)await enterAccount(result.user);
+     else toast(result.message);
+    }finally{if(button)button.disabled=false;}
+    return;
+   }
+   case 'access-form':{
+    const button=event.submitter;
+    if(button)button.disabled=true;
+    try{const {user}=await api('access',data);await enterAccount(user,'inicio');toast('Acceso actualizado');}
+    finally{if(button)button.disabled=false;}
     return;
    }
    case 'profile-form':state.user=(await api('profile',data)).user;state.theme=state.user.theme;localStorage.setItem('colorl-theme',state.theme);dialog.close();render();toast('Perfil guardado');return;
@@ -426,10 +488,9 @@ document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&e
 dialog.addEventListener('close',flushDraft);
 window.addEventListener('popstate',()=>navigate(views[location.hash.slice(1)]?location.hash.slice(1):'inicio'));
 const lab=createLab({state,esc,field,heading,btn,modal,auth,api,refresh,render,toast,statusTag,delta:(pattern,sample)=>differences(pattern,sample).e[0]});
-const initial=location.hash.slice(1);
-if(views[initial]&&initial!=='usuarios')state.view=initial;
-render();
+initializeTheme();
 try{
  const result=await api('me');
- if(result.user){state.user=result.user;state.theme=result.user.theme;await refresh();if(initial==='usuarios'&&state.user.role==='administrador')state.view=initial;render();}
-}catch(error){toast(error.message);}
+ if(result.user)await enterAccount(result.user);
+ else render();
+}catch(error){render();toast(error.message);}

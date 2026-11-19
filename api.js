@@ -16,7 +16,13 @@ async function verifyPassword(password,stored,verifyLegacy){
  return difference===0;
 }
 const now = () => new Date().toISOString();
-const profile = ({id,name,email,role,theme}) => ({id,name,email,role,theme});
+const profile = ({id,name,email,role,theme,invited}) => ({id,name,email,role,theme,fullAccess:role==='administrador'||Boolean(invited)});
+const userColumns = 'users.*, EXISTS(SELECT 1 FROM access_invitations WHERE used_by=users.id) AS invited';
+const codeInput = value => typeof value==='string' ? value.trim() : '';
+const invitationKey = input => /^[a-f0-9]{32}$/i.test(input) ? hash(input.toLowerCase()) : null;
+function isOwnerBootstrap(config,email,code){
+ return Boolean(config.ADMIN_INVITE && config.ADMIN_EMAIL?.trim().toLowerCase()===email && code===config.ADMIN_INVITE.trim());
+}
 const shareScopes = ['Todo el equipo','Laboratorio y supervisión','Solo supervisión'];
 const inkCode = code => String(code??'').trim().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
 const inkTechnology = technology => ['Base agua','UV','Base solvente'].includes(technology);
@@ -44,7 +50,7 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
  try {
   if (method !== 'GET' && req.headers.get('sec-fetch-site') === 'cross-site') return fail(403,'Origen no permitido');
   const token = req.headers.get('cookie')?.match(/(?:^|;\s*)colorl=([a-f0-9]{64})(?:;|$)/)?.[1];
-  const session = token && await query('SELECT users.* FROM sessions JOIN users ON users.id=sessions.user_id WHERE token=? AND expires>?').get(await hash(token),Date.now());
+  const session = token && await query('SELECT '+userColumns+' FROM sessions JOIN users ON users.id=sessions.user_id WHERE token=? AND expires>?').get(await hash(token),Date.now());
   if (path === '/api/me' && method === 'GET') return json(200,{user:session ? profile(session) : null});
   if (['/api/login','/api/register','/api/recover','/api/reset'].includes(path) && method === 'POST') {
    const stamp = Date.now();
@@ -84,16 +90,29 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
     return json(200,{message:'Contraseña actualizada'});
    }
    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length>254 || !validPassword) return fail(400,'Escribe un correo válido y una contraseña de 10 a 200 caracteres');
-   let user = await query('SELECT * FROM users WHERE email=?').get(email);
+   let user = await query('SELECT '+userColumns+' FROM users WHERE email=?').get(email);
    if (path === '/api/register') {
     if (!name) return fail(400,'Escribe tu nombre');
     if (user) return fail(409,'Este correo ya está registrado');
-    const salt = random();
-    const role = config.ADMIN_EMAIL?.trim().toLowerCase() === email && config.ADMIN_INVITE && input.invite === config.ADMIN_INVITE ? 'administrador' : 'laboratorista';
-    const saved = await query('INSERT INTO users(email,name,password,role) VALUES(?,?,?,?) ON CONFLICT(email) DO NOTHING').run(email,name,await passwordHash(password,salt),role);
-    if (!saved.changes) return fail(409,'Este correo ya está registrado');
-    const id = saved.lastInsertRowid;
-    user = await query('SELECT * FROM users WHERE id=?').get(id);
+    const code=codeInput(input.invite), administrator=isOwnerBootstrap(config,email,code);
+    if(config.ADMIN_INVITE&&config.ADMIN_EMAIL?.trim().toLowerCase()===email&&!administrator)
+     return fail(400,'Para registrar el correo administrador, usa el código privado configurado en Cloudflare.');
+    const key=administrator||!code ? null : await invitationKey(code);
+    if(code&&!administrator&&(!key||!await query('SELECT 1 AS valid FROM access_invitations WHERE code_hash=? AND expires_at>? AND used_by IS NULL').get(key,stamp)))return fail(400,'El código de acceso es inválido, venció o ya se utilizó. Puedes dejarlo vacío para crear una cuenta de comparación.');
+    const credential=await passwordHash(password,random()), fresh=random(), expiration=stamp+604800000;
+    const params=[email,name,credential,administrator?'administrador':'laboratorista'];
+    const registration=key
+     ? ['INSERT INTO users(email,name,password,role) SELECT ?,?,?,? WHERE EXISTS(SELECT 1 FROM access_invitations WHERE code_hash=? AND expires_at>? AND used_by IS NULL) ON CONFLICT(email) DO NOTHING',[...params,key,Date.now()]]
+     : ['INSERT INTO users(email,name,password,role) VALUES(?,?,?,?) ON CONFLICT(email) DO NOTHING',params];
+    const statements=[['DELETE FROM sessions WHERE expires<=?',[stamp]],registration];
+    if(key)statements.push(['UPDATE access_invitations SET used_by=(SELECT id FROM users WHERE email=?), used_at=? WHERE code_hash=? AND changes()=1',[email,stamp,key]]);
+    statements.push(['INSERT INTO sessions(token,user_id,expires) SELECT ?,id,? FROM users WHERE email=? AND changes()=1',[await hash(fresh),expiration,email]]);
+    const results=await batch(statements), saved=results[1];
+    user=await query('SELECT '+userColumns+' FROM users WHERE email=?').get(email);
+    if(!saved.changes)return user?fail(409,'Este correo ya está registrado. Inicia sesión para continuar.'):fail(400,'El código de acceso venció o ya se utilizó.');
+    if(!user||!results.at(-1).changes)return fail(503,'La cuenta se creó. Intenta iniciar sesión con tu correo y contraseña.');
+    headers.set('Set-Cookie','colorl='+fresh+'; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800'+secure);
+    return json(200,{user:profile(user)});
    } else {
     const matches = await verifyPassword(password,user?.password,verifyLegacy);
     if (!user || !matches) return fail(401,'Correo o contraseña incorrectos');
@@ -106,6 +125,29 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
   }
   if (!session) return fail(401,'Inicia sesión para continuar');
   const owner = session.id;
+  const account=profile(session);
+  if(path==='/api/invitations' && method==='POST'){
+   if(session.role!=='administrador')return fail(403,'Solo un administrador puede generar invitaciones.');
+   const code=random().slice(0,32), expires=Date.now()+7*86400000;
+   await query('INSERT INTO access_invitations(code_hash,created_by,expires_at) VALUES(?,?,?)').run(await invitationKey(code),owner,expires);
+   return json(201,{code,expires});
+  }
+  if(path==='/api/access' && method==='POST'){
+   if(!await allowAuth())return fail(429,'Inténtalo de nuevo en un minuto');
+   const {code:input}=await body(req), code=codeInput(input);
+   if(isOwnerBootstrap(config,session.email,code)){
+    await query("UPDATE users SET role='administrador' WHERE id=?").run(owner);
+   }else{
+    if(account.fullAccess)return fail(409,'Tu cuenta ya tiene acceso al laboratorio. Si buscas activar el rol administrador, verifica el código privado.');
+    const key=await invitationKey(code);
+    const stamp=Date.now();
+    if(!key)return fail(400,'Ingresa un código de acceso válido.');
+    const outcome=await query('UPDATE access_invitations SET used_by=?,used_at=? WHERE code_hash=? AND expires_at>? AND used_by IS NULL AND NOT EXISTS(SELECT 1 FROM access_invitations WHERE used_by=?)').run(owner,stamp,key,stamp,owner);
+    if(!outcome.changes)return fail(400,'El código de acceso venció, ya se utilizó o tu cuenta ya tiene acceso.');
+   }
+   return json(200,{user:profile(await query('SELECT '+userColumns+' FROM users WHERE id=?').get(owner))});
+  }
+  if(!account.fullAccess && !['/api/profile','/api/logout'].includes(path))return fail(403,'Tu cuenta tiene acceso a Comparar colores. Activa una invitación para desbloquear el laboratorio.');
   if (path === '/api/logout' && method === 'POST') {
    await query('DELETE FROM sessions WHERE token=?').run(await hash(token));
    headers.set('Set-Cookie','colorl=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'+secure);
@@ -115,10 +157,10 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
    const {name,theme} = await body(req);
    if (typeof name !== 'string' || !name.trim() || !['light','dark'].includes(theme)) return fail(400,'Perfil inválido');
    await query('UPDATE users SET name=?,theme=? WHERE id=?').run(name.trim().slice(0,80),theme,owner);
-   return json(200,{user:profile(await query('SELECT * FROM users WHERE id=?').get(owner))});
+   return json(200,{user:profile(await query('SELECT '+userColumns+' FROM users WHERE id=?').get(owner))});
   }
   if (path === '/api/users' && session.role === 'administrador') {
-   if (method === 'GET') return json(200,await query('SELECT id,name,email,role FROM users ORDER BY name').all());
+   if (method === 'GET') return json(200,(await query('SELECT '+userColumns+' FROM users ORDER BY name').all()).map(profile));
    const {id,role} = await body(req);
    if (method !== 'POST' || !Number.isInteger(id) || id===owner || !['administrador','supervisor','laboratorista','operador','estudiante'].includes(role)) return fail(400,'Asignación inválida');
    await query('UPDATE users SET role=? WHERE id=?').run(role,id);
@@ -213,6 +255,10 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
   }
   return fail(404,'Operación no disponible');
  } catch (error) {
+  if (/no such table|no such column/i.test(String(error.message))){
+   console.error('Falta aplicar una migración en D1');
+   return fail(503,'La base de datos de ColorL necesita una migración. Vuelve a desplegar aplicando las migraciones D1.');
+  }
   if (String(error.message).includes('records_active_ink_code'))return fail(409,'Ya existe una tinta activa con ese código.');
   if (error.code==='ENOENT') return fail(404,'Archivo no disponible');
   if (error instanceof SyntaxError || error.message.startsWith('Solicitud')) return fail(400,'Solicitud inválida');
