@@ -1,3 +1,5 @@
+import {standardValue,standardKey} from './public/color-standards.js';
+import {validateSeries} from './public/spectral-model.js';
 import {inventoryRows} from './inventory-api.js';
 const hex = bytes => Array.from(new Uint8Array(bytes), byte=>byte.toString(16).padStart(2,'0')).join('');
 const encoder = new TextEncoder();
@@ -41,7 +43,7 @@ function isOwnerBootstrap(config,email,code){
 const shareScopes = ['Todo el equipo','Laboratorio y supervisión','Solo supervisión'];
 const inkCode = code => String(code??'').trim().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
 const inkTechnology = technology => ['Base agua','UV','Base solvente'].includes(technology);
-const kinds = new Set(['colores','formulas','mediciones','correcciones','inventario','anilox','academia','componentes','tintas','caracterizaciones','catalogos']);
+const kinds = new Set(['colores','formulas','mediciones','correcciones','inventario','anilox','academia','componentes','tintas','caracterizaciones','catalogos','curvas','calidad-estudios','calidad-acciones']);
 
 async function body(req,limit=200000) {
  let data = '';
@@ -310,6 +312,33 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
    await batch(statements);
    return json(200,{count:items.length});
   }
+  if(path==='/api/color-standards' && method==='POST'){
+   if(['operador','estudiante'].includes(session.role))return fail(403,'Permiso insuficiente');
+   const {items}=await body(req,700000);
+   if(!Array.isArray(items)||!items.length||items.length>100)return fail(400,'Importa entre 1 y 100 patrones.');
+   const source=crypto.randomUUID(), updated=now(), seen=new Set();
+   const rows=[];
+   for(const item of items){
+    try{
+     if(typeof item?.title!=='string'||!item.title.trim())throw new Error('Falta el nombre del patrón.');
+     const value=standardValue(item.value||{}), key=standardKey(value);
+     if(seen.has(key))throw new Error('El archivo contiene patrones duplicados.');
+     seen.add(key);
+     rows.push({title:item.title.trim().slice(0,100),value:{...value,standardKey:key,standardImport:source}});
+    }catch(error){return fail(400,error.message);}
+   }
+   const [saved]=await batch([
+    [`INSERT INTO records(owner,kind,title,value,status,updated)
+      SELECT ?,'colores',json_extract(entry.value,'$.title'),json_extract(entry.value,'$.value'),'Registrada',?
+      FROM json_each(?) AS entry WHERE NOT EXISTS(
+       SELECT 1 FROM records WHERE owner=? AND kind='colores' AND status<>'Archivada'
+       AND json_extract(value,'$.standardKey')=json_extract(entry.value,'$.value.standardKey'))`,[owner,updated,JSON.stringify(rows),owner]],
+    [`INSERT INTO history(actor,record_id,snapshot,created)
+      SELECT ?,id,json_object('kind',kind,'title',title,'value',json(value),'status',status),?
+      FROM records WHERE owner=? AND kind='colores' AND json_extract(value,'$.standardImport')=?`,[owner,updated,owner,source]]
+   ]);
+   return json(200,{count:saved.changes,skipped:rows.length-saved.changes});
+  }
   if (path === '/api/records' && method === 'GET') {
    const review = ['administrador','supervisor'].includes(session.role);
    const records = await query(`
@@ -354,10 +383,46 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
     return fail(400,'La existencia del lote debe ser mayor o igual a cero.');
    if(kind==='tintas'&&(typeof value.code!=='string'||!value.code.trim()||value.code.length>240||!inkTechnology(value.technology)))return fail(400,'Escribe un código de tinta y una tecnología válidos.');
    if(kind==='tintas')value.codeKey=inkCode(value.code);
+   if(kind==='curvas'){
+    try{validateSeries(value.series);}
+    catch(error){return fail(400,error.message);}
+    if(value.confirmed!==true||!Number.isSafeInteger(value.inkId)||!Number.isSafeInteger(value.baseId)||value.inkId===value.baseId||
+       !inkTechnology(value.context?.technology)||!String(value.context?.substrate||'').trim()||!String(value.context?.anilox||'').trim()||
+       !Number.isFinite(value.context?.bcm)||value.context.bcm<=0||!String(value.context?.geometry||'').trim())
+     return fail(400,'Completa los componentes, las condiciones y la verificación óptica.');
+   }
+   if(kind==='colores'){
+    if(String(value.collection??'').trim()){
+     try{
+      const standard=standardValue(value);
+      Object.assign(value,standard,{favorite:value.favorite===true,standardKey:standardKey(standard)});
+     }catch(error){return fail(400,error.message);}
+     const duplicate=await query("SELECT id FROM records WHERE owner=? AND kind='colores' AND status<>'Archivada' AND json_extract(value,'$.standardKey')=? AND id<>?").get(owner,value.standardKey,existing?.id??0);
+     if(duplicate)return fail(409,'Ya hay un patrón con este código, colección y condiciones.');
+    }else delete value.standardKey;
+   }
+   if(kind==='formulas'){
+    const prior=existing?JSON.parse(existing.value):null;
+    if(prior?.evidenceType==='Teórica')value.evidenceType='Teórica';
+    if(value.evidenceType==='Teórica'&&status!=='Borrador')return fail(400,'Registra primero una muestra física en Caracterización. La propuesta teórica permanece como borrador.');
+    if(!reviewing&&['Experimental','Validada'].includes(prior?.evidenceType)&&
+       ['components','technology','substrate','anilox','target'].some(key=>String(value[key]??'').trim()!==String(prior[key]??'').trim())){
+     value.evidenceType='Manual';
+     delete value.evidenceId;
+     delete value.modeledDelta;
+    }
+   }
    const updated = now(), serialized = JSON.stringify(value);
    const finalTitle = reviewing ? existing.title : title.trim().slice(0,100);
+   const previous=reviewing?JSON.parse(existing.value):null;
+   if(previous?.evidenceType==='Experimental'){
+    const trial=Number.isSafeInteger(previous.evidenceId)&&await query(`SELECT id FROM records
+      WHERE id=? AND owner=? AND kind='caracterizaciones' AND status<>'Archivada'
+       AND json_extract(value,'$.verified')=1 AND json_extract(value,'$.mode')='mezcla'`).get(previous.evidenceId,existing.owner);
+    if(!trial)return fail(400,'La fórmula experimental requiere un ensayo de mezcla verificado para aprobarse.');
+   }
    const finalValue = reviewing
-    ? JSON.stringify({...JSON.parse(existing.value),...(status==='Compartida' ? {shareScope:shareScopes.includes(value.shareScope) ? value.shareScope : shareScopes[0]} : {})})
+    ? JSON.stringify({...previous,...(previous.evidenceType==='Experimental'?{evidenceType:'Validada'}:{}),...(status==='Compartida' ? {shareScope:shareScopes.includes(value.shareScope) ? value.shareScope : shareScopes[0]} : {})})
     : serialized;
    const snapshot = JSON.stringify({kind,title:finalTitle,value:JSON.parse(finalValue),status});
    const write = existing

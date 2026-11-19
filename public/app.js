@@ -1,3 +1,5 @@
+import {createQuality} from './quality.js';
+import {createColorTools} from './color-tools.js';
 import {BCM_TO_CM3_M2,estimateInk} from './print-calculations.js';
 import {createInventory} from './inventory.js';
 import { createLab } from './lab.js';
@@ -16,8 +18,8 @@ const swatch = color => '<div class="swatch" style="--ink:'+shade(color)+'"></di
 const btn = (label,attrs='',icon='',kind='secondary') => '<button type="button" class="'+kind+'" '+attrs+'>'+ (icon ? I(icon) : '')+esc(label)+'</button>';
 const navGroups = [
  ['GENERAL',[['inicio','Panel de inicio','home']]],
- ['LABORATORIO',[['formulas','Formulación','flask'],['igualacion','Igualación inteligente','spark'],['tintas','Catálogo de tintas','drop'],['caracterizaciones','Caracterización','sliders'],['colores','Biblioteca de colores','palette'],['mediciones','Colorimetría','chart'],['correcciones','Simulador y corrección','sliders'],['asistente','Asistente técnico','spark']]],
- ['GESTIÓN',[['inventario','Inventario de tintas','box'],['anilox','Inventario de anilox','grid'],['historial','Historial y reportes','history']]],
+ ['LABORATORIO',[['formulas','Formulación','flask'],['igualacion','Igualación inteligente','spark'],['tintas','Catálogo de tintas','drop'],['caracterizaciones','Caracterización','sliders'],['espectral','Predicción espectral','chart'],['colores','Biblioteca de colores','palette'],['mediciones','Colorimetría','chart'],['correcciones','Simulador y corrección','sliders'],['asistente','Asistente técnico','spark']]],
+ ['GESTIÓN',[['inventario','Inventario de tintas','box'],['anilox','Inventario de anilox','grid'],['historial','Historial y reportes','history'],['calidad','Control de calidad','chart']]],
  ['RECURSOS',[['academia','Academia','book'],['componentes','Biblioteca técnica','file'],['calculadoras','Calculadoras','calc']]]
 ];
 const views=Object.fromEntries(navGroups.flatMap(([,items])=>items.map(([key,label,icon])=>[key,{label,icon}]))); views.usuarios={label:'Administración',icon:'grid'};
@@ -62,7 +64,7 @@ function render(){
  $('#workspace-label').textContent=full?'Espacio personal':'Acceso de comparación';
  $('#profile').innerHTML='<span class="avatar">'+esc(initials)+'</span><span><strong>'+esc(state.user?.name || 'Usuario invitado')+'</strong><small>'+esc(full?state.user.role:'Comparación')+'</small></span>'+I('chevron');
  $('#account').textContent=initials;
- const content={...lab.views,inicio:dashboard,mediciones:measurements,correcciones:simulation,asistente:assistant,academia:academy,calculadoras:calculators,historial:reports,usuarios:users};
+ const content={...lab.views,espectral:colorTools.spectralView,calidad:quality.view,inicio:dashboard,mediciones:measurements,correcciones:simulation,asistente:assistant,academia:academy,calculadoras:calculators,historial:reports,usuarios:users};
  $('#main').innerHTML=(content[state.view] || (()=>collection(state.view)))();
  initializeTheme();
  if(state.view==='inicio') chart();
@@ -125,7 +127,9 @@ function chart(){
  canvas.onkeydown=e=>{if(['ArrowRight','ArrowLeft'].includes(e.key)&&points.length){e.preventDefault();highlight(Math.max(0,Math.min(points.length-1,active+(e.key==='ArrowRight'?1:-1))));}};
 }
 const schemas={
- colores:[['target','Código Pantone o referencia'],['color','Vista previa sRGB','color'],['lab','L*, a*, b*'],['spectrum','Reflectancia (longitud de onda, valor)','textarea'],['customer','Cliente'],['substrate','Sustrato'],['tolerance','Tolerancia ΔE'],['favorite','Favorito','checkbox']],
+ colores:[['target','Código Pantone o referencia'],['collection','Colección propia o licenciada'],
+ ['hueName','Tonalidad'],['illuminant','Iluminante'],['geometry','Geometría de medición'],['observer','Observador',['','2°','10°']],['condition','Condición de medición',['','M0','M1','M2','M3']],
+ ['product','Producto'],['job','Trabajo'],['source','Fuente o referencia autorizada'],['color','Vista previa sRGB','color'],['lab','L*, a*, b*'],['spectrum','Reflectancia (longitud de onda, valor)','textarea'],['customer','Cliente'],['substrate','Sustrato'],['tolerance','Tolerancia ΔE'],['favorite','Favorito','checkbox']],
  formulas:[['target','Color objetivo'],['color','Vista previa sRGB','color'],['technology','Tecnología',['Base agua','UV']],['family','Fabricante y familia'],['substrate','Sustrato y tratamiento'],['anilox','Anilox, lineatura y BCM real'],['batch','Cantidad a preparar (g)','number'],['conditions','Viscosidad, pH, temperatura y acabados'],['components','Componentes conocidos (uno por línea, nombre: porcentaje)','textarea'],['notes','Procedimiento, lotes y evidencia','textarea']],
  inventario:[['code','Código de tinta'],['lot','Lote'],['minStock','Stock mínimo (kg)','number'],['supplier','Proveedor'],['technology','Tecnología',['','Base agua','UV','Base solvente']],['quantity','Existencia (kg)','number'],['reportedQuantity','Saldo original del PDF (kg)','number'],['entryDate','Fecha de ingreso','date'],['expiry','Caducidad confirmada','date'],['lifeDays','Vigencia indicada en el PDF'],['cost','Costo por kg','number'],['currency','Moneda',['','MXN','USD','EUR']],['stockVerified','Existencia y aptitud verificadas','checkbox'],['notes','Compatibilidad, movimientos y sobrantes','textarea']],
  anilox:[['code','Código'],['lineature','Lineatura','number'],['nominal','BCM nominal','number'],['real','BCM real medido','number'],['sourceAporte','Aporte real según PDF (unidad por confirmar)','number'],['material','Material'],['density','Densidad reportada','number'],['geometry','Geometría'],['angle','Ángulo de grabado','number'],['measured','Fecha de medición','date'],['notes','Estado, limpieza y mediciones','textarea']],
@@ -146,8 +150,9 @@ function collection(kind){
  const imported=['inventario','anilox'].includes(kind);
  return heading(views[kind].label,descriptions[kind],btn('Nuevo registro','data-new="'+kind+'"','plus','primary'))+
  (kind==='formulas'?'<div class="form-actions lab-actions">'+btn('Buscar una fórmula con mis tintas','data-view="igualacion"','spark')+'</div>':'')+
+ (kind==='colores'?colorTools.libraryActions():'')+
  (imported&&inventory.canEdit()?'<div class="form-actions lab-actions">'+btn('Importar PDF','data-inventory-open="'+kind+'"','file')+'</div>':'')+
- '<section class="panel"><input class="filter" id="filter" type="search" aria-label="Filtrar registros" placeholder="Filtrar por nombre, referencia o estado…"><div class="table-scroll"><table class="table"><thead><tr><th>Nombre</th><th>Referencia</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>'+records.map(r=>'<tr data-filter="'+esc([r.title,r.status,Object.values(r.value).join(' ')].join(' ').toLowerCase())+'"><td><div style="display:flex;align-items:center;gap:9px">'+swatch(r.value.color)+esc(r.title)+'</div></td><td>'+esc(r.value.target || r.value.code || r.value.lot || '—')+'</td><td>'+statusTag(r.status)+(kind==='inventario'&&r.value.quantity!=null&&r.value.quantity!==''?'<small class="inventory-stat">'+esc(r.value.quantity)+' kg</small>'+
+ '<section class="panel"><input class="filter" id="filter" type="search" aria-label="Filtrar registros" placeholder="Filtrar por nombre, referencia o estado…"><div class="table-scroll"><table class="table"><thead><tr><th>Nombre</th><th>Referencia</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>'+records.map(r=>'<tr data-filter="'+esc([r.title,r.status,Object.values(r.value).join(' ')].join(' ').toLowerCase())+'"><td><div style="display:flex;align-items:center;gap:9px">'+(kind==='colores'&&!r.value.color?'':swatch(r.value.color))+esc(r.title)+'</div></td><td>'+esc(r.value.target || r.value.code || r.value.lot || '—')+'</td><td>'+statusTag(r.status)+(kind==='inventario'&&r.value.quantity!=null&&r.value.quantity!==''?'<small class="inventory-stat">'+esc(r.value.quantity)+' kg</small>'+
  (r.value.minStock!==''&&r.value.minStock!=null&&Number(r.value.quantity)<=Number(r.value.minStock)?'<small class="inventory-alert">Stock mínimo</small>':''):'')+
  (kind==='anilox'&&Number(r.value.nominal)>0&&Number(r.value.real)>0?'<small class="inventory-stat">'+((Number(r.value.real)/Number(r.value.nominal)-1)*100).toFixed(1)+' % de desviación BCM</small>':'')+'</td><td>'+btn('Abrir','data-edit="'+r.id+'"','chevron','text-button')+'</td></tr>').join('')+'</tbody></table></div><p class="empty" id="no-results" '+(records.length?'hidden':'')+'>No hay registros que mostrar.</p></section>'+
  (imported?inventory.documentLinks(kind):'')+(kind==='colores'?'<p class="notice">Las referencias se registran manualmente. Una biblioteca oficial Pantone requiere licencia. Las muestras en pantalla son aproximaciones sRGB.</p>':'');
@@ -195,9 +200,10 @@ async function editor(kind,r){
   '<label class="field">Existencia (kg) · usa Movimientos del lote<input readonly value="'+esc(value.quantity)+'"></label>':field(key,label,type,value[key])).join('')+'</div>'+
  (reviewing?field('shareScope','Visibilidad al compartir',['Todo el equipo','Laboratorio y supervisión','Solo supervisión'],value.shareScope):'')+
  (kind==='formulas'?'<p class="notice">El escalado usa porcentajes ingresados. Para predecir una mezcla se requieren curvas de caracterización compatibles con el sustrato y el anilox.</p><div class="result" hidden></div>':'')+
+ (kind==='formulas'&&value.evidenceType==='Teórica'?'<p class="notice">Propuesta teórica. Registra una muestra medida en Caracterización y usa el ensayo verificado para generar una fórmula experimental.</p>':'')+
  (r?.value.sourcePage&&kind==='inventario'?'<p class="notice">Origen en PDF. Lote en página '+esc(r.value.sourcePage)+' y existencia en página '+esc(r.value.quantityPage)+'.</p>':'')+
  (r?.value.sourcePage&&kind==='anilox'?'<p class="notice">Origen en PDF. Datos en página 1 y observaciones en página 2.</p>':'')+
- '<div class="form-actions">'+(canEdit?'<button class="primary" name="status" value="Borrador">Guardar</button>':'')+(canEdit&&kind==='formulas'?'<button class="secondary" name="status" value="En revisión">Enviar a revisión</button>':'')+
+ '<div class="form-actions">'+(canEdit?'<button class="primary" name="status" value="Borrador">Guardar</button>':'')+(canEdit&&kind==='formulas'&&value.evidenceType!=='Teórica'?'<button class="secondary" name="status" value="En revisión">Enviar a revisión</button>':'')+
  (kind==='formulas'?btn('Calcular gramajes','data-scale','calc'):'')+
  (kind==='inventario'&&r?.id?btn('Movimientos del lote','data-stock-movement="'+r.id+'"','history'):'')+
  (r?.value.source&&['inventario','anilox'].includes(kind)?inventory.original(r.value.source):'')+(reviewing?'<button class="secondary" name="status" value="Aprobada">Aprobar</button><button class="secondary" name="status" value="Compartida">Compartir con el equipo</button>':'')+'</div>'+(canEdit && !r?'<p id="draft-status" class="notice" role="status">'+(draft?'Borrador recuperado':'')+'</p>':'')+'<p class="error" role="alert"></p></form>');
@@ -371,6 +377,14 @@ document.addEventListener('click',async event=>{
    el.disabled=true;
    try{if(await lab.click(el))return;}finally{el.disabled=el.dataset.saved==='true';}
   }
+  if(Object.keys(d).some(key=>key.startsWith('quality'))){
+   el.disabled=true;
+   try{if(await quality.click(el))return;}finally{el.disabled=false;}
+  }
+  if(Object.keys(d).some(key=>key.startsWith('color'))){
+   el.disabled=true;
+   try{if(await colorTools.click(el))return;}finally{el.disabled=el.dataset.saved==='true';}
+  }
   if(d.inventoryOpen)return inventory.open(d.inventoryOpen);
   if(d.stockMovement)return await inventory.movement(d.stockMovement);
   if(d.view)return navigate(d.view);
@@ -428,6 +442,17 @@ document.addEventListener('submit',async event=>{
  const form=event.target;event.preventDefault();const data=formData(form), error=$('.error',form);
  if(error)error.textContent='';
  try{
+  if(form.dataset.qualityForm){
+   const button=event.submitter;if(button)button.disabled=true;
+   try{await quality.submit(form);}finally{if(button)button.disabled=false;}
+   return;
+  }
+  if(form.dataset.colorForm){
+   const button=event.submitter;
+   if(button)button.disabled=true;
+   try{await colorTools.submit(form);}finally{if(button)button.disabled=false;}
+   return;
+  }
   if(form.dataset.inventory){
    const button=event.submitter;
    if(button)button.disabled=true;
@@ -536,6 +561,8 @@ document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&e
 dialog.addEventListener('close',flushDraft);
 window.addEventListener('popstate',()=>navigate(views[location.hash.slice(1)]?location.hash.slice(1):'inicio'));
 const inventory=createInventory({state,esc,field,btn,modal,api,refresh,render,toast});
+const quality=createQuality({state,esc,field,heading,btn,modal,api,refresh,render,toast,download});
+const colorTools=createColorTools({state,esc,field,heading,btn,modal,api,refresh,render,toast,delta:(a,b)=>differences(a,b).e[0],labColor});
 const lab=createLab({state,esc,field,heading,btn,modal,auth,api,refresh,render,toast,statusTag,delta:(pattern,sample)=>differences(pattern,sample).e[0]});
 initializeTheme();
 try{

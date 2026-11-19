@@ -266,7 +266,7 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
    await persist({kind:'formulas',title:'Propuesta · '+candidate.record.title,status:'Borrador',value:{
     target:own('colores').find(r=>r.id===Number(input.pattern))?.title||input.target,technology:ctx.technology,substrate:ctx.substrate,anilox:ctx.anilox+' · '+ctx.bcm+' BCM',batch:String(batch),processConditions:ctx,
     components:candidate.parts.map(p=>codeFor(p.id)+': '+p.percent.toFixed(6)).join('\n'),
-    notes:'A partir del ensayo '+candidate.record.title+'. ΔE₀₀ del ensayo '+candidate.delta.toFixed(2)+'.\n'+(candidate.record.value.notes||''),evidenceId:candidate?.record.id??null,modeledDelta:candidate.delta,estimatedCost:candidate.cost}});
+    notes:'A partir del ensayo '+candidate.record.title+'. ΔE₀₀ del ensayo '+candidate.delta.toFixed(2)+'.\n'+(candidate.record.value.notes||''),evidenceId:candidate?.record.id??null,modeledDelta:candidate.delta,evidenceType:'Experimental',estimatedCost:candidate.cost}});
    toast('Fórmula guardada como borrador');return true;
   }
   if(d.labSession){

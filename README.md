@@ -62,3 +62,15 @@ Para usar un lote en el formulador, abre su ficha, corrige o registra su existen
 En **Inventario de anilox → Importar PDF**, usa el formato de dos páginas con los datos y observaciones. La columna «Aporte real» del documento queda como dato de origen. En la ficha registra **BCM real medido** cuando confirmes la unidad y el valor. Solo ese valor se propone en el formulador y se compara con el BCM nominal.
 
 Los PDF se conservan como documentos privados de la cuenta. La importación específica admite PDF de hasta 1 MB y hasta 150 filas. Las calculadoras distinguen la capacidad geométrica en cm³/m² de la tinta realmente transferida. La estimación de consumo requiere introducir explícitamente el porcentaje de transferencia.
+
+## Patrones y predicción espectral
+
+En **Biblioteca de colores**, usa **Importar patrones CSV**, **Buscar por medición** o **Comparar patrones**. El CSV admite hasta 100 filas. La columna de reflectancia usa pares `nm, porcentaje` separados por `|`. Completa iluminante, observador, condición M y geometría si está disponible. Los filtros de cliente, producto, trabajo y sustrato permiten aplicar la tolerancia que corresponde al patrón. Las colecciones comerciales requieren los datos y la autorización del titular. ColorL no incluye una base Pantone redistribuida.
+
+En **Predicción espectral → Registrar serie óptica**, guarda una matriz con una primera fila como `nm, 0, 5, 10` y sus reflectancias medidas para cada concentración. Confirma la película ópticamente gruesa y no fluorescente, el sustrato opaco y la dispersión comparable. La estimación interpola K/S de una tinta en una base fija dentro de los intervalos medidos. Mantén iguales el sustrato, el anilox, el BCM y las condiciones del instrumento. El resultado compara el error RMS de reflectancia y no lo convierte a ΔE. La propuesta se puede guardar como borrador teórico. Para tramitar una aprobación, registra una prueba física en Caracterización y genera una fórmula experimental desde Igualación. Cambiar la composición o las condiciones centrales de una fórmula experimental invalida su vínculo con el ensayo precedente.
+
+## Control de calidad
+
+En **Control de calidad**, registra lecturas individuales en orden para generar cartas **I–MR**. Los límites de control se calculan de los datos, y los límites de especificación se introducen por separado. Los índices preliminares se calculan con al menos 25 observaciones, una variación medible, las especificaciones y los supuestos confirmados. Las cartas implementan la señal de un punto fuera de límite. Esto no sustituye una evaluación de estabilidad, normalidad o MSA. Los estudios guardados se pueden exportar a Excel o imprimir como PDF desde el navegador.
+
+El Pareto acepta una categoría y frecuencia por línea. Las acciones correctivas registran responsable, fecha, contención, análisis de los cinco porqués, acción permanente y verificación. Para cerrar una acción, registra qué se hizo y cómo se comprobó su efectividad.

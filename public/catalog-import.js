@@ -1,3 +1,5 @@
+import {parseSeparated} from './delimited.js';
+export {parseSeparated} from './delimited.js';
 import { normalize, technologies } from './lab-model.js';
 
 const aliases={
@@ -17,27 +19,7 @@ const keyOf = value => keyByHeader.get(normalize(value).replace(/[:*]+$/,''));
 export const MAX_CATALOG_BYTES = 1_000_000;
 const MAX_ROWS = 20;
 const MAX_PAGES = 20;
-export function parseSeparated(text){
- const lines=String(text).replace(/^\uFEFF/,'');
- const sample=(lines.split(/\r?\n/).find(line=>line.trim())||'').replace(/"(?:""|[^"])*"/g,'');
- const marks=['\t',';',',','|'];
- const separator=marks.sort((a,b)=>sample.split(b).length-sample.split(a).length)[0];
- const rows=[];let row=[],cell='',quoted=false;
- for(let i=0;i<lines.length;i++){
-  const char=lines[i];
-  if(char==='"'){
-   if(quoted&&lines[i+1]==='"'){cell+='"';i++;}
-   else if(quoted||!cell)quoted=!quoted;
-   else cell+=char;
-  }else if(!quoted&&(char===separator||char==='\n'||char==='\r')){
-   row.push(cell.trim());cell='';
-   if(char!==separator){if(row.some(Boolean))rows.push(row);row=[];if(char==='\r'&&lines[i+1]==='\n')i++;}
-  }else cell+=char;
- }
- if(quoted)throw new Error('Revisa las comillas sin cerrar del catálogo.');
- row.push(cell.trim());if(row.some(Boolean))rows.push(row);
- return rows;
-}
+
 function technology(value){
  const text=normalize(value);
  return technologies.find(type=>normalize(type)===text)||({'water based':'Base agua','base acuosa':'Base agua','uv curable':'UV','solvente':'Base solvente','solvent based':'Base solvente'})[text]||'';
@@ -70,6 +52,14 @@ function loadScript(src){
   script.onerror=()=>{script.remove();reject(new Error('No se pudo cargar el lector de Excel.'));};
   document.head.append(script);
  });
+}
+let excelLoading;
+export async function loadExcel(){
+ if(!globalThis.ExcelJS){
+  excelLoading ??= loadScript('/vendor/exceljs.js').catch(error=>{excelLoading=undefined;throw error;});
+  await excelLoading;
+ }
+ return globalThis.ExcelJS;
 }
 async function withOCR(action){
  const {default:tesseract}=await import('/vendor/tesseract.js');
@@ -122,8 +112,8 @@ export async function extractCatalog(file){
  let sheets=[],text='';
  if(ext==='csv'||ext==='tsv'){text=await file.text();sheets=[parseSeparated(text)];}
  else if(ext==='xlsx'){
-  if(!globalThis.ExcelJS)await loadScript('/vendor/exceljs.js');
-  const workbook=new globalThis.ExcelJS.Workbook();await workbook.xlsx.load(await file.arrayBuffer());
+  const excel=await loadExcel();
+  const workbook=new excel.Workbook();await workbook.xlsx.load(await file.arrayBuffer());
   workbook.eachSheet(sheet=>{
    const rows=[];sheet.eachRow(row=>{rows.push(Array.from({length:Math.min(row.cellCount,40)},(_,i)=>row.getCell(i+1).text));});sheets.push(rows);
   });
