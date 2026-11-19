@@ -52,3 +52,13 @@ En **Igualación inteligente**, selecciona un patrón guardado con CIELAB o ingr
 El diagnóstico filtra productos con una ficha confirmada, un rango de dosificación y coincidencias explícitas para la tecnología, familia, sustrato y objetivo. Añade esos datos al editar el producto. Las existencias opcionales en gramos sirven para filtrar propuestas. Actualízalas en el catálogo cuando cambien.
 
 Para el desarrollo local ejecuta `npm ci` antes de `npm start`. La instalación prepara los lectores de PDF, Excel y OCR como archivos del sitio. Workers Builds ejecuta esta instalación en Cloudflare. Conserva el comando de despliegue que aplica las migraciones D1 antes de publicar. Ejecuta `npm test` para verificar importación tabular y reglas de formulación, corrección y diagnóstico.
+
+## Importación de inventarios industriales
+
+En **Inventario de tintas → Importar PDF**, usa el formato de cuatro páginas con lotes en las primeras dos y existencias y costos en las otras dos. La revisión permite omitir filas. El sistema enlaza las mitades por su posición vertical dentro de la página y detiene la importación si faltan filas correspondientes. Los lotes se identifican por código y lote. Un saldo negativo del documento se conserva como observación y queda pendiente de ajuste. Los códigos nuevos pueden añadirse al catálogo.
+
+Para usar un lote en el formulador, abre su ficha, corrige o registra su existencia, confirma su caducidad y marca **Existencia y aptitud verificadas**. Indica la moneda si quieres estimar costos. Para los códigos procedentes del inventario, las fórmulas solo usan existencias confirmadas y vigentes. Usa **Movimientos del lote** para entradas y salidas posteriores. Cada cambio conserva el motivo y el saldo en el historial.
+
+En **Inventario de anilox → Importar PDF**, usa el formato de dos páginas con los datos y observaciones. La columna «Aporte real» del documento queda como dato de origen. En la ficha registra **BCM real medido** cuando confirmes la unidad y el valor. Solo ese valor se propone en el formulador y se compara con el BCM nominal.
+
+Los PDF se conservan como documentos privados de la cuenta. La importación específica admite PDF de hasta 1 MB y hasta 150 filas. Las calculadoras distinguen la capacidad geométrica en cm³/m² de la tinta realmente transferida. La estimación de consumo requiere introducir explícitamente el porcentaje de transferencia.

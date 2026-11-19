@@ -1,3 +1,5 @@
+import {BCM_TO_CM3_M2,estimateInk} from './print-calculations.js';
+import {createInventory} from './inventory.js';
 import { createLab } from './lab.js';
 const paths={
  home:'<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-6h6v6"/>', flask:'<path d="M9 3h6m-5 0v7L4 19a1 1 0 0 0 1 2h14a1 1 0 0 0 1-2l-6-9V3M7 15h10"/>',
@@ -125,8 +127,8 @@ function chart(){
 const schemas={
  colores:[['target','Código Pantone o referencia'],['color','Vista previa sRGB','color'],['lab','L*, a*, b*'],['spectrum','Reflectancia (longitud de onda, valor)','textarea'],['customer','Cliente'],['substrate','Sustrato'],['tolerance','Tolerancia ΔE'],['favorite','Favorito','checkbox']],
  formulas:[['target','Color objetivo'],['color','Vista previa sRGB','color'],['technology','Tecnología',['Base agua','UV']],['family','Fabricante y familia'],['substrate','Sustrato y tratamiento'],['anilox','Anilox, lineatura y BCM real'],['batch','Cantidad a preparar (g)','number'],['conditions','Viscosidad, pH, temperatura y acabados'],['components','Componentes conocidos (uno por línea, nombre: porcentaje)','textarea'],['notes','Procedimiento, lotes y evidencia','textarea']],
- inventario:[['lot','Lote'],['quantity','Existencia (kg)','number'],['expiry','Caducidad','date'],['cost','Costo por kg','number'],['notes','Compatibilidad, movimientos y sobrantes','textarea']],
- anilox:[['code','Código'],['lineature','Lineatura','number'],['nominal','BCM nominal','number'],['real','BCM real','number'],['geometry','Geometría'],['notes','Estado, limpieza y mediciones','textarea']],
+ inventario:[['code','Código de tinta'],['lot','Lote'],['minStock','Stock mínimo (kg)','number'],['supplier','Proveedor'],['technology','Tecnología',['','Base agua','UV','Base solvente']],['quantity','Existencia (kg)','number'],['reportedQuantity','Saldo original del PDF (kg)','number'],['entryDate','Fecha de ingreso','date'],['expiry','Caducidad confirmada','date'],['lifeDays','Vigencia indicada en el PDF'],['cost','Costo por kg','number'],['currency','Moneda',['','MXN','USD','EUR']],['stockVerified','Existencia y aptitud verificadas','checkbox'],['notes','Compatibilidad, movimientos y sobrantes','textarea']],
+ anilox:[['code','Código'],['lineature','Lineatura','number'],['nominal','BCM nominal','number'],['real','BCM real medido','number'],['sourceAporte','Aporte real según PDF (unidad por confirmar)','number'],['material','Material'],['density','Densidad reportada','number'],['geometry','Geometría'],['angle','Ángulo de grabado','number'],['measured','Fecha de medición','date'],['notes','Estado, limpieza y mediciones','textarea']],
  componentes:[['code','Fabricante y código'],['target','Familia o función'],['spectrum','Caracterización, reflectancia y concentración','textarea'],['notes','Compatibilidad, ficha técnica y hoja de seguridad','textarea']]
 };
 const heading=(title,description,action='')=>'<div class="page-head"><div><h1>'+title+'</h1><p>'+description+'</p></div>'+action+'</div>';
@@ -141,12 +143,17 @@ const field=(name,label,type='text',value='',required=false)=>{
 const descriptions={colores:'Patrones propios, referencias Pantone y favoritos.',formulas:'Prepara, escala y comparte fórmulas verificadas.',inventario:'Consulta lotes, existencias y sobrantes de producción.',anilox:'Registra la geometría, el estado y el aporte de tus rodillos.',componentes:'Registra caracterizaciones y documentación del fabricante.'};
 function collection(kind){
  const records=byKind(kind);
+ const imported=['inventario','anilox'].includes(kind);
  return heading(views[kind].label,descriptions[kind],btn('Nuevo registro','data-new="'+kind+'"','plus','primary'))+
  (kind==='formulas'?'<div class="form-actions lab-actions">'+btn('Buscar una fórmula con mis tintas','data-view="igualacion"','spark')+'</div>':'')+
- '<section class="panel"><input class="filter" id="filter" type="search" aria-label="Filtrar registros" placeholder="Filtrar por nombre, referencia o estado…"><div class="table-scroll"><table class="table"><thead><tr><th>Nombre</th><th>Referencia</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>'+records.map(r=>'<tr data-filter="'+esc([r.title,r.status,Object.values(r.value).join(' ')].join(' ').toLowerCase())+'"><td><div style="display:flex;align-items:center;gap:9px">'+swatch(r.value.color)+esc(r.title)+'</div></td><td>'+esc(r.value.target || r.value.code || r.value.lot || '—')+'</td><td>'+statusTag(r.status)+'</td><td>'+btn('Abrir','data-edit="'+r.id+'"','chevron','text-button')+'</td></tr>').join('')+'</tbody></table></div><p class="empty" id="no-results" '+(records.length?'hidden':'')+'>No hay registros que mostrar.</p></section>'+
- (kind==='colores'?'<p class="notice">Las referencias se registran manualmente. Una biblioteca oficial Pantone requiere licencia. Las muestras en pantalla son aproximaciones sRGB.</p>':'');
+ (imported&&inventory.canEdit()?'<div class="form-actions lab-actions">'+btn('Importar PDF','data-inventory-open="'+kind+'"','file')+'</div>':'')+
+ '<section class="panel"><input class="filter" id="filter" type="search" aria-label="Filtrar registros" placeholder="Filtrar por nombre, referencia o estado…"><div class="table-scroll"><table class="table"><thead><tr><th>Nombre</th><th>Referencia</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>'+records.map(r=>'<tr data-filter="'+esc([r.title,r.status,Object.values(r.value).join(' ')].join(' ').toLowerCase())+'"><td><div style="display:flex;align-items:center;gap:9px">'+swatch(r.value.color)+esc(r.title)+'</div></td><td>'+esc(r.value.target || r.value.code || r.value.lot || '—')+'</td><td>'+statusTag(r.status)+(kind==='inventario'&&r.value.quantity!=null&&r.value.quantity!==''?'<small class="inventory-stat">'+esc(r.value.quantity)+' kg</small>'+
+ (r.value.minStock!==''&&r.value.minStock!=null&&Number(r.value.quantity)<=Number(r.value.minStock)?'<small class="inventory-alert">Stock mínimo</small>':''):'')+
+ (kind==='anilox'&&Number(r.value.nominal)>0&&Number(r.value.real)>0?'<small class="inventory-stat">'+((Number(r.value.real)/Number(r.value.nominal)-1)*100).toFixed(1)+' % de desviación BCM</small>':'')+'</td><td>'+btn('Abrir','data-edit="'+r.id+'"','chevron','text-button')+'</td></tr>').join('')+'</tbody></table></div><p class="empty" id="no-results" '+(records.length?'hidden':'')+'>No hay registros que mostrar.</p></section>'+
+ (imported?inventory.documentLinks(kind):'')+(kind==='colores'?'<p class="notice">Las referencias se registran manualmente. Una biblioteca oficial Pantone requiere licencia. Las muestras en pantalla son aproximaciones sRGB.</p>':'');
 }
-function modal(title,content){
+function modal(title,content,wide=false){
+ dialog.classList.toggle('wide-dialog',wide);
  modalBody.innerHTML='<div class="dialog-title"><h2>'+esc(title)+'</h2><button class="icon-button" type="button" data-close aria-label="Cerrar">'+I('x')+'</button></div>'+content;
  if(!dialog.open) dialog.showModal();
 }
@@ -184,11 +191,16 @@ async function editor(kind,r){
  const canEdit=own && !['estudiante','operador'].includes(state.user?.role);
  const draft=!r && canEdit ? (await api('draft?kind='+kind)).content : null;
  const value=r?.value||draft||{};
- modal(views[kind].label,'<form id="editor" data-kind="'+kind+'" data-id="'+(r?.id || '')+'"><div class="form-grid">'+field('title','Nombre','text',r?.title||draft?.title||'',true)+schemas[kind].map(([key,label,type])=>field(key,label,type,value[key])).join('')+'</div>'+
+ modal(views[kind].label,'<form id="editor" data-kind="'+kind+'" data-id="'+(r?.id || '')+'"><div class="form-grid">'+field('title','Nombre','text',r?.title||draft?.title||'',true)+schemas[kind].map(([key,label,type])=>kind==='inventario'&&key==='quantity'&&r&&value.quantity!=null&&value.quantity!==''?
+  '<label class="field">Existencia (kg) · usa Movimientos del lote<input readonly value="'+esc(value.quantity)+'"></label>':field(key,label,type,value[key])).join('')+'</div>'+
  (reviewing?field('shareScope','Visibilidad al compartir',['Todo el equipo','Laboratorio y supervisión','Solo supervisión'],value.shareScope):'')+
  (kind==='formulas'?'<p class="notice">El escalado usa porcentajes ingresados. Para predecir una mezcla se requieren curvas de caracterización compatibles con el sustrato y el anilox.</p><div class="result" hidden></div>':'')+
+ (r?.value.sourcePage&&kind==='inventario'?'<p class="notice">Origen en PDF. Lote en página '+esc(r.value.sourcePage)+' y existencia en página '+esc(r.value.quantityPage)+'.</p>':'')+
+ (r?.value.sourcePage&&kind==='anilox'?'<p class="notice">Origen en PDF. Datos en página 1 y observaciones en página 2.</p>':'')+
  '<div class="form-actions">'+(canEdit?'<button class="primary" name="status" value="Borrador">Guardar</button>':'')+(canEdit&&kind==='formulas'?'<button class="secondary" name="status" value="En revisión">Enviar a revisión</button>':'')+
- (kind==='formulas'?btn('Calcular gramajes','data-scale','calc'):'')+(reviewing?'<button class="secondary" name="status" value="Aprobada">Aprobar</button><button class="secondary" name="status" value="Compartida">Compartir con el equipo</button>':'')+'</div>'+(canEdit && !r?'<p id="draft-status" class="notice" role="status">'+(draft?'Borrador recuperado':'')+'</p>':'')+'<p class="error" role="alert"></p></form>');
+ (kind==='formulas'?btn('Calcular gramajes','data-scale','calc'):'')+
+ (kind==='inventario'&&r?.id?btn('Movimientos del lote','data-stock-movement="'+r.id+'"','history'):'')+
+ (r?.value.source&&['inventario','anilox'].includes(kind)?inventory.original(r.value.source):'')+(reviewing?'<button class="secondary" name="status" value="Aprobada">Aprobar</button><button class="secondary" name="status" value="Compartida">Compartir con el equipo</button>':'')+'</div>'+(canEdit && !r?'<p id="draft-status" class="notice" role="status">'+(draft?'Borrador recuperado':'')+'</p>':'')+'<p class="error" role="alert"></p></form>');
 }
 const labFields=(prefix,values=[])=>['L*','a*','b*'].map((label,i)=>field(prefix+i,label,'number',values[i],true)).join('');
 function measurements(){
@@ -269,8 +281,15 @@ function assistant(){
 }
 const calcTypes=[['masa','Porcentaje a gramos','Total (g)','Porcentaje (%)'],['bcm','Variación de aporte BCM','BCM nominal','BCM real'],['costo','Costo del lote','Cantidad (kg)','Costo por kg'],['balance','Balance después de corrección','Masa inicial (g)','Masa añadida (g)'],['dilucion','Dilución de una mezcla','Masa inicial (g)','Diluyente agregado (g)']];
 function calculators(){
- return heading('Calculadoras','Resuelve escalados, costos, aportes de anilox y balances de masa.')+'<div class="tool-grid">'+calcTypes.map(([type,label,a,b])=>'<form class="panel" data-calc="'+type+'"><h2>'+label+'</h2><div class="form-grid" style="margin-top:12px">'+field('a',a,'number','',true)+field('b',b,'number','',true)+'</div><div class="form-actions"><button class="primary">Calcular</button></div><p class="error"></p><output class="result" hidden></output></form>').join('')+'</div>';
+ const estimateFields=[['area','Área total del trabajo (m²)'],['bcm','BCM medido'],['coverage','Área cubierta por la tinta (%)'],['transfer','Transferencia medida o supuesta (%)'],['density','Densidad de tinta (g/cm³)'],['unitCost','Costo por kg (opcional)'],['labels','Etiquetas en el trabajo (opcional)']];
+ return heading('Calculadoras','Resuelve escalados, costos, aportes de anilox y balances de masa.')+'<div class="tool-grid">'+
+  calcTypes.map(([type,label,a,b])=>'<form class="panel" data-calc="'+type+'"><h2>'+label+'</h2><div class="form-grid" style="margin-top:12px">'+field('a',a,'number','',true)+field('b',b,'number','',true)+'</div><div class="form-actions"><button class="primary">Calcular</button></div><p class="error"></p><output class="result" hidden></output></form>').join('')+
+  '<form class="panel" data-calc="bcm-volume"><h2>Capacidad geométrica del anilox</h2><div class="form-actions">'+field('a','BCM','number','',true)+'<button class="primary">Convertir</button></div><p class="error"></p><output class="result" hidden></output></form>'+
+  '<form class="panel wide" data-calc="ink-estimate"><h2>Consumo teórico del trabajo</h2><p class="notice">Usa la transferencia medida o una hipótesis explícita. El resultado estima la tinta transferida y no incluye desperdicio ni carga de circuito.</p>'+
+  '<div class="form-grid">'+estimateFields.map(([key,label],i)=>field(key,label,'number','',i<5)).join('')+'</div>'+
+  '<div class="form-actions"><button class="primary">Estimar consumo</button></div><p class="error"></p><output class="result" hidden></output></form></div>';
 }
+
 function reports(){
  return heading('Historial y reportes','Consulta la actividad y exporta los datos de tu laboratorio.',btn('Imprimir / PDF','data-print','file'))+'<div class="form-actions" style="margin-bottom:15px">'+btn('Exportar JSON','data-export="json"','file','primary')+btn('Exportar CSV','data-export="csv"','file')+btn('Ver modificaciones','data-history','history')+'</div><section class="panel"><h2>Actividad reciente</h2>'+(state.records.map(recordRow).join('')||'<p class="empty">Aún no hay actividad.</p>')+'</section>';
 }
@@ -352,6 +371,8 @@ document.addEventListener('click',async event=>{
    el.disabled=true;
    try{if(await lab.click(el))return;}finally{el.disabled=el.dataset.saved==='true';}
   }
+  if(d.inventoryOpen)return inventory.open(d.inventoryOpen);
+  if(d.stockMovement)return await inventory.movement(d.stockMovement);
   if(d.view)return navigate(d.view);
   if(d.close!==undefined)return dialog.close();
   if(d.new)return await editor(d.new);
@@ -407,6 +428,12 @@ document.addEventListener('submit',async event=>{
  const form=event.target;event.preventDefault();const data=formData(form), error=$('.error',form);
  if(error)error.textContent='';
  try{
+  if(form.dataset.inventory){
+   const button=event.submitter;
+   if(button)button.disabled=true;
+   try{await inventory.submit(form);}finally{if(button)button.disabled=false;}
+   return;
+  }
   if(form.dataset.lab){
    const button=event.submitter;
    if(button)button.disabled=true;
@@ -439,6 +466,12 @@ document.addEventListener('submit',async event=>{
     const {title,...fields}=data;
     const previous=state.records.find(r=>r.id===id)?.value;
     const value={...previous,...fields};if(kind==='colores')value.favorite=data.favorite==='on';
+    if(kind==='inventario'){
+     value.stockVerified=data.stockVerified==='on';
+     if(value.minStock!==''&&(!Number.isFinite(Number(value.minStock))||Number(value.minStock)<0))throw new Error('El stock mínimo debe ser mayor o igual a cero.');
+     if(value.stockVerified&&(!value.code.trim()||!value.lot.trim()||value.quantity==null||value.quantity===''||!value.expiry||!value.technology))
+      throw new Error('Para confirmar el lote, indica código, lote, tecnología, existencia y fecha de caducidad.');
+    }
     await save({id,kind,title,value,status},kind);return;
    }
    case 'measure':measure(form);return;
@@ -456,6 +489,20 @@ document.addEventListener('submit',async event=>{
    if(state.user&&!byKind('academia').some(r=>r.value.lesson===index)){await save({kind:'academia',title,value:{lesson:index},status:'Completada'});return;}
    toast('Respuesta correcta');return;
   }
+  if(form.dataset.calc==='ink-estimate'){
+   const numeric=Object.fromEntries(Object.entries(data).map(([key,value])=>[key,value===''?null:Number(value)]));
+   const estimate=estimateInk(numeric), result=$('output',form);
+   const format=value=>value.toLocaleString('es-MX',{maximumFractionDigits:4});
+   const parts=[format(estimate.capacity)+' cm³/m² de capacidad',format(estimate.massPerArea)+' g/m² transferidos',format(estimate.kilograms)+' kg para el trabajo'];
+   if(estimate.cost!=null)parts.push(format(estimate.cost)+' de costo');
+   if(estimate.perThousand!=null)parts.push(format(estimate.perThousand)+' de costo por millar');
+   result.hidden=false;result.textContent=parts.join(' · ');return;
+  }
+  if(form.dataset.calc==='bcm-volume'){
+   const bcm=Number(data.a), result=$('output',form);
+   if(!Number.isFinite(bcm)||bcm<0)throw new Error('El BCM debe ser mayor o igual a cero.');
+   result.hidden=false;result.textContent=(bcm*BCM_TO_CM3_M2).toFixed(4)+' cm³/m² de capacidad geométrica';return;
+  }
   if(form.dataset.calc){
    const a=Number(data.a),b=Number(data.b),type=form.dataset.calc;
    if(a<0||b<0||(['bcm','dilucion'].includes(type)&&a===0)||(type==='masa'&&b>100))throw new Error('Revisa el intervalo de los valores.');
@@ -470,6 +517,7 @@ document.addEventListener('input',event=>{
  if(indicator){
   const content=formData(form);
   if(form.dataset.kind==='colores')content.favorite=content.favorite==='on';
+  if(form.dataset.kind==='inventario')content.stockVerified=content.stockVerified==='on';
   draftPending={kind:form.dataset.kind,content,status:indicator};
   clearTimeout(draftTimer);
   draftTimer=setTimeout(flushDraft,550);
@@ -483,10 +531,11 @@ document.addEventListener('input',event=>{
  }
  if(el.id==='hue')$('#hue-result').textContent=el.value+'° · Complementario '+((Number(el.value)+180)%360)+'°';
 });
-document.addEventListener('change',event=>{if(event.target.id==='chart-days'){state.chartDays=Number(event.target.value);render();$('#chart-days').focus();}});
+document.addEventListener('change',event=>{lab.change(event.target);if(event.target.id==='chart-days'){state.chartDays=Number(event.target.value);render();$('#chart-days').focus();}});
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();search();}});
 dialog.addEventListener('close',flushDraft);
 window.addEventListener('popstate',()=>navigate(views[location.hash.slice(1)]?location.hash.slice(1):'inicio'));
+const inventory=createInventory({state,esc,field,btn,modal,api,refresh,render,toast});
 const lab=createLab({state,esc,field,heading,btn,modal,auth,api,refresh,render,toast,statusTag,delta:(pattern,sample)=>differences(pattern,sample).e[0]});
 initializeTheme();
 try{

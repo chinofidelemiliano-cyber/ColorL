@@ -1,4 +1,4 @@
-import {context, corrections, diagnostic, formulations, mixture, normalize, positive, readLab, spectrum, symptoms, technologies} from './lab-model.js';
+import {context, corrections, diagnostic, formulations, linkInventory, lotCost, mixture, normalize, positive, processFields, readLab, spectrum, symptoms, technologies} from './lab-model.js';
 import {encodeFile,extractCatalog} from './catalog-import.js';
 
 export const inkFields=[
@@ -16,7 +16,7 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
  const pending=new WeakMap();
  const editable=()=>state.user&&!['operador','estudiante'].includes(state.user.role);
  const own=kind=>state.records.filter(r=>r.kind===kind&&r.owner===state.user?.id&&r.status!=='Archivada');
- const inks=()=>own('tintas').map(r=>({...r,value:{...r.value,available:r.value.available!==false&&!r.value.inactive}}));
+ const inks=()=>linkInventory(own('tintas').map(r=>({...r,value:{...r.value,available:r.value.available!==false&&!r.value.inactive}})),own('inventario'));
  const available=()=>inks().filter(r=>r.value.available);
  const trials=()=>[...own('caracterizaciones'),...own('correcciones')].map(record=>({
   ...record,approvedFormula:approved().find(formula=>formula.id===record.value.formulaId)
@@ -24,7 +24,19 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
  const measures=()=>own('mediciones');
  const approved=()=>own('formulas').filter(r=>['Aprobada','Compartida'].includes(r.status));
  const options=(name,label,records,required=false)=>'<label class="field">'+esc(label)+'<select name="'+name+'" '+(required?'required':'')+'><option value="">Seleccionar</option>'+records.map(r=>'<option value="'+r.id+'">'+esc(r.title)+'</option>').join('')+'</select></label>';
- const conditions=()=>field('technology','Tecnología',technologies)+field('substrate','Sustrato y tratamiento','text','',true)+field('anilox','Código de anilox','text','',true)+field('bcm','Aporte real (BCM)','number','',true)+field('condition','Condición de medición',['M0','M1','M2','M3'],'M1')+field('illuminant','Iluminante y observador','text','D50 / 2°',true);
+ const conditions=()=>field('technology','Tecnología',technologies)+field('substrate','Sustrato y tratamiento','text','',true)+
+  options('aniloxRecord','Anilox de mi inventario',own('anilox').filter(r=>Number(r.value.real)>0))+
+  field('anilox','Código de anilox','text','',true)+field('bcm','Aporte real medido (BCM)','number','',true)+
+  field('condition','Condición de medición',['M0','M1','M2','M3'],'M1')+field('illuminant','Iluminante y observador','text','D50 / 2°',true)+
+  '<details class="wide"><summary>Condiciones adicionales de impresión</summary><div class="form-grid">'+processFields.map(([key,label,type])=>field(key,label,type)).join('')+'</div></details>';
+ function change(field){
+  if(field.name!=='aniloxRecord'||!field.form?.dataset.lab)return;
+  const roller=own('anilox').find(record=>record.id===Number(field.value));
+  if(!roller)return;
+  for(const [name,value] of Object.entries({anilox:roller.value.code,bcm:roller.value.real,lineature:roller.value.lineature,nominalBcm:roller.value.nominal}))
+   field.form.elements.namedItem(name).value=value??'';
+ }
+
  const codeFor=id=>inks().find(r=>r.id===id)?.value.code||'—';
  const nameFor=id=>inks().find(r=>r.id===id)?.title||'Tinta archivada';
  const sessions=()=>own('correcciones').filter(r=>r.value.targetLab&&r.value.conditions&&Array.isArray(r.value.parts));
@@ -34,7 +46,7 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
   return [...amounts].map(([id,grams])=>codeFor(id)+': '+grams).join('\n');
  }
  const number=n=>Number(n).toFixed(3);
- const partsTable=parts=>'<ol class="lab-list">'+parts.map(part=>'<li><strong>'+esc(codeFor(part.id))+' · '+esc(nameFor(part.id))+'</strong> — '+number(part.grams)+' g'+(part.percent==null?'':' · '+number(part.percent)+' %')+(part.difference==null?'':' · cambio '+(part.difference>=0?'+':'')+number(part.difference)+' g')+'</li>').join('')+'</ol>';
+ const partsTable=parts=>'<ol class="lab-list">'+parts.map(part=>'<li><strong>'+esc(codeFor(part.id))+' · '+esc(nameFor(part.id))+'</strong> — '+number(part.grams)+' g ('+Number(part.grams/1000).toFixed(6)+' kg)'+(part.percent==null?'':' · '+number(part.percent)+' %')+(part.difference==null?'':' · cambio '+(part.difference>=0?'+':'')+number(part.difference)+' g')+'</li>').join('')+'</ol>';
  function spectralComparison(curves){
   const valid=curves.filter(([,points])=>points.length>1);
   if(!valid.length)return '';
@@ -83,7 +95,7 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
    '<div class="form-actions lab-actions">'+btn('Importar catálogo o ficha','data-lab-import','file')+'</div><section class="panel">'+
    (rows.length?'<div class="table-scroll"><table class="table"><thead><tr><th>Código</th><th>Tinta</th><th>Tecnología</th><th>Disponibilidad</th></tr></thead><tbody>'+
     rows.map(r=>'<tr><td>'+esc(r.value.code)+'</td><td>'+btn(r.title,'data-lab-ink="'+r.id+'"','','text-button')+'</td><td>'+esc(r.value.technology)+'</td><td>'+statusTag(r.value.available?'Disponible':'Sin existencia')+'</td></tr>').join('')+'</tbody></table></div>':blank('Todavía no tienes tintas en tu catálogo.'))+'</section><div class="section-head"><h2>Catálogos y fichas</h2></div><section class="panel">'+
-   (own('catalogos').map(r=>'<div class="record-row"><div><strong>'+esc(r.title)+'</strong><small>'+esc(r.value.count)+' tintas importadas</small></div>'+btn('Ver extracción','data-lab-document="'+r.id+'"','','text-button')+' <a class="text-button" href="/api/catalog-source?id='+encodeURIComponent(r.value.source)+'">Descargar original</a></div>').join('')||blank('Todavía no has importado documentos.'))+'</section>';
+   (own('catalogos').filter(r=>!r.value.importKind).map(r=>'<div class="record-row"><div><strong>'+esc(r.title)+'</strong><small>'+esc(r.value.count)+' tintas importadas</small></div>'+btn('Ver extracción','data-lab-document="'+r.id+'"','','text-button')+' <a class="text-button" href="/api/catalog-source?id='+encodeURIComponent(r.value.source)+'">Descargar original</a></div>').join('')||blank('Todavía no has importado documentos.'))+'</section>';
  };
  views.caracterizaciones=()=>heading('Caracterización','Registra ensayos de mezcla y correcciones medidos en condiciones reproducibles.')+
   '<form class="panel" data-lab="trial"><div class="form-grid">'+field('title','Nombre del ensayo','text','',true)+field('mode','Tipo de ensayo',['Mezcla','Ajuste de una mezcla'])+conditions()+
@@ -121,10 +133,13 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
  }
  function showFormulas(form,input){
   const color=target(input),ctx=context(input),batch=positive(input.batch,'El tamaño del lote'), tolerance=positive(input.tolerance,'La tolerancia');
-  const candidates=formulations(trials(),available(),{target:color,conditions:ctx,batch},delta);
+  const eligible=available();
+  const candidates=formulations(trials(),eligible,{target:color,conditions:ctx,batch},delta)
+   .map(candidate=>({...candidate,cost:lotCost(candidate.parts,eligible)}));
   pending.set(form,{candidates,input,ctx,batch});
-  result(form,candidates.length?candidates.map(({record,parts,delta:distance,best,count},index)=>'<section class="lab-candidate"><h3>'+esc(record.title)+'</h3><p>ΔE₀₀ '+(count===1?'del ensayo '+distance.toFixed(2):'observado '+best.toFixed(2)+'–'+distance.toFixed(2)+' en '+count+' ensayos')+' · '+(distance<=tolerance?'Dentro de tolerancia en las pruebas':'Requiere una nueva prueba')+'</p>'+
-  '<p>Confianza '+(distance<=tolerance?(count>1?'moderada, con repetición':'moderada, con una prueba'):'baja')+'. Selección por cercanía medida y coincidencia de sustrato, anilox, BCM y condiciones. Reproduce este orden de incorporación y verifica la mezcla preparada.</p>'+partsTable(parts)+
+  result(form,candidates.length?candidates.map(({record,parts,delta:distance,best,count,cost},index)=>'<section class="lab-candidate"><h3>'+esc(record.title)+'</h3><p>ΔE₀₀ '+(count===1?'del ensayo '+distance.toFixed(2):'observado '+best.toFixed(2)+'–'+distance.toFixed(2)+' en '+count+' ensayos')+' · '+(distance<=tolerance?'Dentro de tolerancia en las pruebas':'Requiere una nueva prueba')+'</p>'+
+  '<p>Confianza '+(distance<=tolerance?(count>1?'moderada, con repetición':'moderada, con una prueba'):'baja')+'. Selección por cercanía medida y coincidencia de sustrato, anilox, BCM y condiciones. Prepara primero una muestra pequeña en este orden. Mídela con el mismo sustrato, anilox, iluminante y condición antes de escalar.</p>'+partsTable(parts)+
+  (cost?'<p>Costo estimado por lotes de vencimiento más cercano: '+esc(cost.currency)+' '+cost.amount.toFixed(2)+'</p>':'')+
   (record.approvedFormula?'<p>Fórmula aprobada relacionada: '+esc(record.approvedFormula.title)+'</p>':'')+
   (record.value.notes?'<p>'+esc(record.value.notes)+'</p>':'')+btn('Guardar como fórmula','data-lab-formula="'+index+'"','','primary')+'</section>').join('')+
   blank('Cada opción es una mezcla completa ensayada con las tintas disponibles. Si falta un componente, exclúyelo del catálogo para buscar otras mezclas verificadas.'):
@@ -249,9 +264,9 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
   if(d.labFormula!==undefined){
    const {candidates,input,ctx,batch}=pending.get(button.closest('form')),candidate=candidates[Number(d.labFormula)];
    await persist({kind:'formulas',title:'Propuesta · '+candidate.record.title,status:'Borrador',value:{
-    target:own('colores').find(r=>r.id===Number(input.pattern))?.title||input.target,technology:ctx.technology,substrate:ctx.substrate,anilox:ctx.anilox+' · '+ctx.bcm+' BCM',batch:String(batch),
+    target:own('colores').find(r=>r.id===Number(input.pattern))?.title||input.target,technology:ctx.technology,substrate:ctx.substrate,anilox:ctx.anilox+' · '+ctx.bcm+' BCM',batch:String(batch),processConditions:ctx,
     components:candidate.parts.map(p=>codeFor(p.id)+': '+p.percent.toFixed(6)).join('\n'),
-    notes:'A partir del ensayo '+candidate.record.title+'. ΔE₀₀ del ensayo '+candidate.delta.toFixed(2)+'.\n'+(candidate.record.value.notes||''),evidenceId:candidate?.record.id??null,modeledDelta:candidate.delta}});
+    notes:'A partir del ensayo '+candidate.record.title+'. ΔE₀₀ del ensayo '+candidate.delta.toFixed(2)+'.\n'+(candidate.record.value.notes||''),evidenceId:candidate?.record.id??null,modeledDelta:candidate.delta,estimatedCost:candidate.cost}});
    toast('Fórmula guardada como borrador');return true;
   }
   if(d.labSession){
@@ -284,5 +299,5 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
   }
   return false;
  }
- return {views,submit,click};
+ return {views,submit,click,change};
 }

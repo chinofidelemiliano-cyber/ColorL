@@ -46,6 +46,13 @@ export const scale = (parts,grams) => {
  const original=total(parts);
  return parts.map(part=>({id:part.id,grams:grams*part.grams/original,percent:100*part.grams/original}));
 };
+export const processFields=[
+ ['substrateColor','Color del sustrato','text'],['opacity','Opacidad del sustrato (%)','number',0,100],
+ ['surfaceEnergy','Tratamiento (dinas/cm)','number',0],['lineature','Lineatura','number',1],
+ ['nominalBcm','BCM nominal','number',0],['speed','Velocidad de impresión (m/min)','number',0],
+ ['viscosity','Viscosidad (valor, unidad y copa)','text'],['ph','pH','number',0,14],
+ ['temperature','Temperatura de tinta (°C)','number',-50,100]
+];
 export function context(input){
  const result={};
  for(const key of ['technology','substrate','anilox','condition','illuminant']){
@@ -54,10 +61,18 @@ export function context(input){
  }
  if(!technologies.includes(result.technology))throw new Error('Selecciona una tecnología válida.');
  result.bcm=positive(input.bcm,'El BCM real');
+ for(const [key,label,type,min,max] of processFields){
+  const raw=String(input[key]??'').trim();
+  if(!raw)continue;
+  const parsed=type==='number'?Number(raw):raw;
+  if(type==='number'&&(!Number.isFinite(parsed)||parsed<min||(max!=null&&parsed>max)))throw new Error(label+' está fuera del intervalo válido.');
+  result[key]=parsed;
+ }
  return result;
 }
 function compatible(left,right){
- return ['technology','substrate','anilox','condition','illuminant'].every(key=>normalize(left?.[key])===normalize(right[key]))&&Math.abs(left.bcm-right.bcm)<1e-8;
+ return ['technology','substrate','anilox','condition','illuminant'].every(key=>normalize(left?.[key])===normalize(right[key]))&&Math.abs(left.bcm-right.bcm)<1e-8&&
+  processFields.every(([key])=>right[key]==null||(left?.[key]!=null&&normalize(left[key])===normalize(right[key])));
 }
 const matchingParts=(parts,inks,conditions)=>Array.isArray(parts)&&parts.length>0&&parts.every(part=>Number.isFinite(part.grams)&&part.grams>0&&inks.some(ink=>ink.id===part.id&&normalize(ink.value.technology)===normalize(conditions.technology)));
 const allAvailable=(parts,inks,conditions)=>matchingParts(parts,inks.filter(ink=>ink.value.available!==false),conditions);
@@ -122,4 +137,34 @@ export function diagnostic(inks,input){
   .filter(({min,max})=>Number.isFinite(min)&&Number.isFinite(max)&&min>=0&&max>=min&&max<=100&&max>0)
   .map(product=>({...product,minGrams:mass*product.min/100,maxGrams:mass*product.max/100}));
  return candidates.filter(product=>enoughStock([{id:product.ink.id,grams:product.maxGrams}],inks));
+}
+
+// Confirmed lots take precedence over a manually entered catalog balance.
+export function linkInventory(inks,lots,today=new Date().toISOString().slice(0,10)){
+ return inks.map(ink=>{
+  const related=lots.filter(lot=>normalize(lot.value.code)===normalize(ink.value.code)&&
+   normalize(lot.value.technology)===normalize(ink.value.technology)&&lot.value.stockVerified===true);
+  if(!related.length)return ink.value.requiresVerifiedLots?{...ink,value:{...ink.value,available:false,stockGrams:0}}:ink;
+  const usable=related.filter(lot=>/^\d{4}-\d{2}-\d{2}$/.test(lot.value.expiry||'')&&lot.value.expiry>=today&&Number(lot.value.quantity)>0);
+  const grams=usable.reduce((total,lot)=>total+1000*Number(lot.value.quantity),0);
+  return {...ink,value:{...ink.value,available:ink.value.available!==false&&grams>0,stockGrams:grams,verifiedLots:usable}};
+ });
+}
+export function lotCost(parts,inks){
+ let currency, amount=0;
+ for(const part of parts){
+  const lots=inks.find(ink=>ink.id===part.id)?.value.verifiedLots;
+  if(!lots?.length)return null;
+  let grams=part.grams;
+  for(const {value:lot} of [...lots].sort((a,b)=>a.value.expiry.localeCompare(b.value.expiry))){
+   if(grams<=1e-8)break;
+   const unit=Number(lot.cost);
+   if(!lot.currency||lot.cost==null||lot.cost===''||!Number.isFinite(unit)||unit<0||(currency&&currency!==lot.currency))return null;
+   currency=lot.currency;
+   const used=Math.min(grams,1000*Number(lot.quantity));
+   amount+=used*unit/1000;grams-=used;
+  }
+  if(grams>1e-8)return null;
+ }
+ return currency?{currency,amount}:null;
 }

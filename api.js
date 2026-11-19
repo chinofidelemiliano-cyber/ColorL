@@ -1,3 +1,4 @@
+import {inventoryRows} from './inventory-api.js';
 const hex = bytes => Array.from(new Uint8Array(bytes), byte=>byte.toString(16).padStart(2,'0')).join('');
 const encoder = new TextEncoder();
 const hash = async value => hex(await crypto.subtle.digest('SHA-256',encoder.encode(value)));
@@ -207,6 +208,86 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
    const bytes=Uint8Array.from(atob(item.data),character=>character.charCodeAt(0));
    return new Response(bytes,{headers:{'Content-Type':'application/octet-stream','Content-Disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(item.filename),'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
   }
+  if(path==='/api/inventory-import' && method==='POST'){
+   if(['operador','estudiante'].includes(session.role))return fail(403,'Permiso insuficiente');
+   const {kind,filename,data,items,addToCatalog}=await body(req,1550000);
+   const rows=inventoryRows(kind,items);
+   if(!rows||typeof filename!=='string'||filename.length>180||!/\.pdf$/i.test(filename)||typeof data!=='string'||data.length>1333336||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(data)||data.length%4||!atob(data).startsWith('%PDF-')||atob(data).length>1000000)
+    return fail(400,'Revisa el PDF, los campos obligatorios y los posibles duplicados.');
+   const source=crypto.randomUUID(), updated=now(), status='Registrada';
+   const document=JSON.stringify({source,importKind:kind,count:rows.length});
+   const statements=[
+    ['INSERT INTO catalog_sources VALUES(?,?,?,?)',[source,owner,filename,data]],
+    [`INSERT INTO records(owner,kind,title,value,status,updated)
+      SELECT ?,?,json_extract(entry.value,'$.title'),json_set(json_extract(entry.value,'$.value'),'$.source',?),?,?
+      FROM json_each(?) AS entry
+      WHERE NOT EXISTS (SELECT 1 FROM records r WHERE r.owner=? AND r.kind=?
+       AND lower(trim(json_extract(r.value,'$.code')))=lower(trim(json_extract(entry.value,'$.value.code')))
+       AND (?!='inventario' OR lower(trim(json_extract(r.value,'$.lot')))=lower(trim(json_extract(entry.value,'$.value.lot')))))`,
+     [owner,kind,source,status,updated,JSON.stringify(rows),owner,kind,kind]],
+   ];
+   const products=new Map();
+   if(kind==='inventario'&&addToCatalog===true){
+    for(const {title,value} of rows){
+     const codeKey=inkCode(value.code);
+     if(!inkTechnology(value.technology))continue;
+     const existing=products.get(codeKey);
+     if(existing&&existing.value.technology!==value.technology){
+      products.set(codeKey,{value:{technology:null}});
+      continue;
+     }
+     if(!existing)products.set(codeKey,{title,value:{code:value.code,codeKey,technology:value.technology,supplier:value.supplier,available:true,requiresVerifiedLots:true,source}});
+    }
+   }
+   const catalog=[...products.values()].filter(product=>product.value.technology);
+   if(catalog.length)statements.push([`
+    INSERT INTO records(owner,kind,title,value,status,updated)
+    SELECT ?,'tintas',json_extract(entry.value,'$.title'),json_extract(entry.value,'$.value'),?,?
+    FROM json_each(?) AS entry WHERE NOT EXISTS(
+     SELECT 1 FROM records WHERE owner=? AND kind='tintas' AND status<>'Archivada'
+      AND json_extract(value,'$.codeKey')=json_extract(entry.value,'$.value.codeKey'))`,[owner,status,updated,JSON.stringify(catalog),owner]]);
+   statements.push(
+    [`INSERT INTO history(actor,record_id,snapshot,created)
+      SELECT ?,id,json_object('kind',kind,'title',title,'value',json(value),'status',status),?
+      FROM records WHERE owner=? AND kind IN (?,'tintas') AND json_extract(value,'$.source')=?`,[owner,updated,owner,kind,source]],
+    [`INSERT INTO records(owner,kind,title,value,status,updated)
+      SELECT ?,'catalogos',?,json_set(?,'$.count',COUNT(*)),?,? FROM records
+      WHERE owner=? AND kind=? AND json_extract(value,'$.source')=?`,[owner,filename,document,status,updated,owner,kind,source]]
+   );
+   const results=await batch(statements);
+   return json(200,{count:results[1].changes,skipped:rows.length-results[1].changes,catalogCount:catalog.length?results[2].changes:0});
+  }
+  if(path==='/api/stock-movement' && method==='POST'){
+   if(['operador','estudiante'].includes(session.role))return fail(403,'Permiso insuficiente');
+   const {id,amount,reason}=await body(req);
+   if(!Number.isSafeInteger(id)||typeof amount!=='number'||!Number.isFinite(amount)||amount===0||Math.abs(amount)>1e7||typeof reason!=='string'||!reason.trim())
+    return fail(400,'Indica un lote, una cantidad y el motivo del movimiento.');
+   const changed=now(), movement=crypto.randomUUID();
+   const [write]=await batch([
+    [`UPDATE records SET value=json_set(value,'$.quantity',round(CAST(json_extract(value,'$.quantity') AS REAL)+?,6),
+     '$.lastMovement',?),updated=? WHERE id=? AND owner=? AND kind='inventario' AND status<>'Archivada'
+     AND json_extract(value,'$.quantity') IS NOT NULL AND json_extract(value,'$.quantity')!='' AND round(CAST(json_extract(value,'$.quantity') AS REAL)+?,6)>=0`,
+     [amount,movement,changed,id,owner,amount]],
+    [`INSERT INTO history(actor,record_id,snapshot,created)
+      SELECT ?,id,json_object('kind',kind,'title',title,'value',json(value),'status',status,
+       'movement',json_object('amount',?,'reason',?)),? FROM records
+      WHERE owner=? AND id=? AND json_extract(value,'$.lastMovement')=?`,[owner,amount,reason.trim().slice(0,500),changed,owner,id,movement]]
+   ]);
+   if(!write.changes)return fail(409,'El lote no está disponible o la salida supera la existencia.');
+   return json(200,{ok:true});
+  }
+  if(path==='/api/stock-movement' && method==='GET'){
+   const id=Number(url.searchParams.get('id'));
+   if(!Number.isSafeInteger(id)||id<=0)return fail(400,'Selecciona un lote.');
+   return json(200,await query(`SELECT history.created,
+    json_extract(history.snapshot,'$.movement.amount') AS amount,
+    json_extract(history.snapshot,'$.movement.reason') AS reason,
+    json_extract(history.snapshot,'$.value.quantity') AS quantity
+    FROM history JOIN records ON records.id=history.record_id
+    WHERE records.owner=? AND records.kind='inventario' AND records.id=?
+    AND json_type(history.snapshot,'$.movement')='object' ORDER BY history.id DESC LIMIT 100`).all(owner,id));
+  }
   if (path === '/api/catalog-import' && method === 'POST') {
    if (['operador','estudiante'].includes(session.role)) return fail(403,'Permiso insuficiente');
    const {filename,data,items,text}=await body(req,1550000);
@@ -255,6 +336,22 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
    const review = ['administrador','supervisor'].includes(session.role);
    const reviewing = existing?.kind==='formulas' && kind==='formulas' && review && ['En revisión','Aprobada','Compartida'].includes(existing.status) && ['Aprobada','Compartida'].includes(status);
    if ((id != null && (!existing || existing.kind!==kind || (existing.owner!==owner && !reviewing))) || (session.role==='estudiante' && kind!=='academia') || (session.role==='operador' && kind!=='mediciones') || (kind==='formulas' && ['Aprobada','Compartida'].includes(status) && !reviewing)) return fail(403,'Permiso insuficiente');
+   if(kind==='inventario'&&existing){
+    const current=JSON.parse(existing.value);
+    if(current.quantity!=null&&current.quantity!==''){
+     value.quantity=current.quantity;
+     if(current.lastMovement)value.lastMovement=current.lastMovement;
+    }
+   }
+   if(kind==='inventario'&&value.stockVerified===true){
+    const date=String(value.expiry??'');
+    if(!String(value.code??'').trim()||!String(value.lot??'').trim()||!inkTechnology(value.technology)||
+      value.quantity==null||value.quantity===''||!/^\d{4}-\d{2}-\d{2}$/.test(date)||
+      !Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date)
+     return fail(400,'Completa código, lote, tecnología, existencia y caducidad válida antes de verificar.');
+   }
+   if(kind==='inventario'&&value.quantity!==''&&value.quantity!=null&&(!Number.isFinite(Number(value.quantity))||Number(value.quantity)<0))
+    return fail(400,'La existencia del lote debe ser mayor o igual a cero.');
    if(kind==='tintas'&&(typeof value.code!=='string'||!value.code.trim()||value.code.length>240||!inkTechnology(value.technology)))return fail(400,'Escribe un código de tinta y una tecnología válidos.');
    if(kind==='tintas')value.codeKey=inkCode(value.code);
    const updated = now(), serialized = JSON.stringify(value);

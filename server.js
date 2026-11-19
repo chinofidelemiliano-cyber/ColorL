@@ -36,7 +36,7 @@ function allowAuth(ip){
  rates.set(ip,rate);
  return ++rate.count<=25;
 }
-const files = {'/':'index.html','/styles.css':'styles.css','/app.js':'app.js','/lab.js':'lab.js','/lab-model.js':'lab-model.js','/catalog-import.js':'catalog-import.js','/hero.webp':'hero.webp','/hero.png':'hero.png'};
+const files = {'/':'index.html','/styles.css':'styles.css','/app.js':'app.js','/lab.js':'lab.js','/lab-model.js':'lab-model.js','/inventory-import.js':'inventory-import.js','/inventory.js':'inventory.js','/print-calculations.js':'print-calculations.js','/catalog-import.js':'catalog-import.js','/hero.webp':'hero.webp','/hero.png':'hero.png'};
 const mime = {html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',mjs:'text/javascript; charset=utf-8',wasm:'application/wasm',webp:'image/webp',png:'image/png'};
 
 
