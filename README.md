@@ -19,3 +19,14 @@ Los registros, la configuración del perfil y las revisiones se guardan en SQLit
 ## Alcance técnico
 
 Las fórmulas escalan proporciones conocidas. El flujo de corrección compara pruebas medidas. Una predicción de pigmentos requiere caracterización compatible. El asistente ofrece guías locales de diagnóstico. La biblioteca permite registrar referencias propias y códigos Pantone de forma manual.
+
+## Publicar en Cloudflare desde el navegador
+
+La rama `colorl-app` incluye un Cloudflare Worker que sirve la interfaz y la API. Usa D1 para guardar las cuentas y los registros. Los pasos se realizan en el panel web de Cloudflare y los comandos se ejecutan en sus servidores de compilación.
+
+1. En **Storage & databases → D1**, crea una base de datos llamada `colorl`.
+2. En **Workers & Pages → Create application**, elige **Workers** y conecta el repositorio GitHub `chinofidelemiliano-cyber/ColorL`. Selecciona `colorl-app` como rama de producción y la raíz del repositorio como directorio.
+3. En el campo **Deploy command**, escribe `npx --yes wrangler@4.165.0 d1 migrations apply colorl --remote && npx --yes wrangler@4.165.0 deploy`. El campo **Build command** puede quedar vacío. El token de Workers Builds necesita acceso de edición a Workers y D1.
+4. Guarda y despliega. Abre el dominio `workers.dev` que muestre el Worker. Comprueba que puedes crear una cuenta, guardar un registro y volver a verlo al iniciar sesión.
+
+Si vas a usar los permisos de administración o la recuperación por correo, configura las variables y secretos descritos arriba en **Settings → Variables and Secrets** del Worker. La base D1 se crea vacía. La publicación no copia los datos de la instancia SQLite local. Las copias en producción se administran mediante D1, y el usuario puede seguir exportando sus registros desde ColorL.
