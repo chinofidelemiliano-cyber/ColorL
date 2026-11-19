@@ -9,7 +9,7 @@ export const positive = (value,label) => {
 export function parseLab(text){
  const parts=String(text ?? '').trim().split(/[\s,;]+/);
  const lab=parts.map(Number);
- if(parts.length!==3||lab.some(n=>!Number.isFinite(n))||lab[0]<0||lab[0]>100||lab.slice(1).some(n=>Math.abs(n)>200))
+ if(parts.length!==3||parts.some(value=>!value)||lab.some(n=>!Number.isFinite(n))||lab[0]<0||lab[0]>100||lab.slice(1).some(n=>Math.abs(n)>200))
   throw new Error('Escribe tres valores CIELAB en el formato L*, a*, b* (decimales con punto).');
  return lab;
 }
@@ -83,7 +83,7 @@ function enoughStock(parts,inks){
   return stock==null||stock===''||(Number.isFinite(Number(stock))&&Number(stock)+1e-8>=part.grams);
  });
 }
-export function formulations(trials,inks,{target,conditions,batch},delta){
+export function formulations(trials,inks,{target,conditions,batch,tolerance},delta){
  const groups=new Map();
  for(const record of trials){
   const {value:v}=record;
@@ -101,7 +101,8 @@ export function formulations(trials,inks,{target,conditions,batch},delta){
    if(record.approvedFormula&&!existing.record.approvedFormula)existing.record=record;
   }else groups.set(key,{record,parts,delta:distance,best:distance,count:1});
  }
- return [...groups.values()].sort((a,b)=>a.delta-b.delta||b.count-a.count).slice(0,5);
+ const validated=candidate=>Boolean(candidate.record.approvedFormula && Number.isFinite(tolerance) && candidate.delta<=tolerance);
+ return [...groups.values()].sort((a,b)=>Number(validated(b))-Number(validated(a))||a.delta-b.delta||b.count-a.count).slice(0,5);
 }
 
 const signature=parts=>scale(parts,100).map(p=>[p.id,p.percent]);

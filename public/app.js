@@ -1,3 +1,5 @@
+import {createPrepared} from './prepared.js';
+import {differences,displayLab,instrumentReading,opticalEvidence} from './instrument.js';
 import {createQuality} from './quality.js';
 import {createColorTools} from './color-tools.js';
 import {BCM_TO_CM3_M2,estimateInk} from './print-calculations.js';
@@ -19,7 +21,7 @@ const btn = (label,attrs='',icon='',kind='secondary') => '<button type="button" 
 const navGroups = [
  ['GENERAL',[['inicio','Panel de inicio','home']]],
  ['LABORATORIO',[['formulas','Formulación','flask'],['igualacion','Igualación inteligente','spark'],['tintas','Catálogo de tintas','drop'],['caracterizaciones','Caracterización','sliders'],['espectral','Predicción espectral','chart'],['colores','Biblioteca de colores','palette'],['mediciones','Colorimetría','chart'],['correcciones','Simulador y corrección','sliders'],['asistente','Asistente técnico','spark']]],
- ['GESTIÓN',[['inventario','Inventario de tintas','box'],['anilox','Inventario de anilox','grid'],['historial','Historial y reportes','history'],['calidad','Control de calidad','chart']]],
+ ['GESTIÓN',[['inventario','Inventario de tintas','box'],['preparados','Colores preparados','palette'],['anilox','Inventario de anilox','grid'],['historial','Historial y reportes','history'],['calidad','Control de calidad','chart']]],
  ['RECURSOS',[['academia','Academia','book'],['componentes','Biblioteca técnica','file'],['calculadoras','Calculadoras','calc']]]
 ];
 const views=Object.fromEntries(navGroups.flatMap(([,items])=>items.map(([key,label,icon])=>[key,{label,icon}]))); views.usuarios={label:'Administración',icon:'grid'};
@@ -64,7 +66,7 @@ function render(){
  $('#workspace-label').textContent=full?'Espacio personal':'Acceso de comparación';
  $('#profile').innerHTML='<span class="avatar">'+esc(initials)+'</span><span><strong>'+esc(state.user?.name || 'Usuario invitado')+'</strong><small>'+esc(full?state.user.role:'Comparación')+'</small></span>'+I('chevron');
  $('#account').textContent=initials;
- const content={...lab.views,espectral:colorTools.spectralView,calidad:quality.view,inicio:dashboard,mediciones:measurements,correcciones:simulation,asistente:assistant,academia:academy,calculadoras:calculators,historial:reports,usuarios:users};
+ const content={...lab.views,espectral:colorTools.spectralView,calidad:quality.view,preparados:prepared.view,inicio:dashboard,mediciones:measurements,correcciones:simulation,asistente:assistant,academia:academy,calculadoras:calculators,historial:reports,usuarios:users};
  $('#main').innerHTML=(content[state.view] || (()=>collection(state.view)))();
  initializeTheme();
  if(state.view==='inicio') chart();
@@ -187,51 +189,79 @@ function flushDraft(){
  });
  return draftWrite;
 }
-async function editor(kind,r){
+async function editor(kind,r,copy=false){
  if(!schemas[kind]) return;
  if(!state.user && !r) return auth();
  await flushDraft();
- const own=!r || (r.id>0 && state.user?.id===r.owner);
- const reviewing= r?.id>0 && ['administrador','supervisor'].includes(state.user?.role) && ['En revisión','Aprobada','Compartida'].includes(r.status) && kind==='formulas';
+ const own=copy || !r || (r.id>0 && state.user?.id===r.owner);
+ const reviewing= !copy && r?.id>0 && ['administrador','supervisor'].includes(state.user?.role) && ['En revisión','Aprobada','Compartida'].includes(r.status) && kind==='formulas';
  const canEdit=own && !['estudiante','operador'].includes(state.user?.role);
  const draft=!r && canEdit ? (await api('draft?kind='+kind)).content : null;
  const value=r?.value||draft||{};
- modal(views[kind].label,'<form id="editor" data-kind="'+kind+'" data-id="'+(r?.id || '')+'"><div class="form-grid">'+field('title','Nombre','text',r?.title||draft?.title||'',true)+schemas[kind].map(([key,label,type])=>kind==='inventario'&&key==='quantity'&&r&&value.quantity!=null&&value.quantity!==''?
+ modal(views[kind].label,'<form id="editor" data-kind="'+kind+'" data-id="'+(copy?'':r?.id||'')+'" data-copy="'+(copy?r.id:'')+'"><div class="form-grid">'+field('title','Nombre','text',copy?'Copia · '+r.title:r?.title||draft?.title||'',true)+schemas[kind].map(([key,label,type])=>kind==='inventario'&&key==='quantity'&&r&&value.quantity!=null&&value.quantity!==''?
   '<label class="field">Existencia (kg) · usa Movimientos del lote<input readonly value="'+esc(value.quantity)+'"></label>':field(key,label,type,value[key])).join('')+'</div>'+
  (reviewing?field('shareScope','Visibilidad al compartir',['Todo el equipo','Laboratorio y supervisión','Solo supervisión'],value.shareScope):'')+
  (kind==='formulas'?'<p class="notice">El escalado usa porcentajes ingresados. Para predecir una mezcla se requieren curvas de caracterización compatibles con el sustrato y el anilox.</p><div class="result" hidden></div>':'')+
  (kind==='formulas'&&value.evidenceType==='Teórica'?'<p class="notice">Propuesta teórica. Registra una muestra medida en Caracterización y usa el ensayo verificado para generar una fórmula experimental.</p>':'')+
  (r?.value.sourcePage&&kind==='inventario'?'<p class="notice">Origen en PDF. Lote en página '+esc(r.value.sourcePage)+' y existencia en página '+esc(r.value.quantityPage)+'.</p>':'')+
  (r?.value.sourcePage&&kind==='anilox'?'<p class="notice">Origen en PDF. Datos en página 1 y observaciones en página 2.</p>':'')+
- '<div class="form-actions">'+(canEdit?'<button class="primary" name="status" value="Borrador">Guardar</button>':'')+(canEdit&&kind==='formulas'&&value.evidenceType!=='Teórica'?'<button class="secondary" name="status" value="En revisión">Enviar a revisión</button>':'')+
- (kind==='formulas'?btn('Calcular gramajes','data-scale','calc'):'')+
+ '<div class="form-actions">'+(canEdit?'<button class="primary" name="status" value="Borrador">Guardar</button>':'')+(canEdit&&!copy&&kind==='formulas'&&value.evidenceType!=='Teórica'?'<button class="secondary" name="status" value="En revisión">Enviar a revisión</button>':'')+
+ (kind==='formulas'?btn('Calcular gramajes','data-scale','calc')+(r&&!copy&&!['operador','estudiante'].includes(state.user.role)?btn('Duplicar fórmula','data-duplicate-formula='+r.id,'plus'):''):'')+
  (kind==='inventario'&&r?.id?btn('Movimientos del lote','data-stock-movement="'+r.id+'"','history'):'')+
- (r?.value.source&&['inventario','anilox'].includes(kind)?inventory.original(r.value.source):'')+(reviewing?'<button class="secondary" name="status" value="Aprobada">Aprobar</button><button class="secondary" name="status" value="Compartida">Compartir con el equipo</button>':'')+'</div>'+(canEdit && !r?'<p id="draft-status" class="notice" role="status">'+(draft?'Borrador recuperado':'')+'</p>':'')+'<p class="error" role="alert"></p></form>');
+ (r?.value.source&&['inventario','anilox'].includes(kind)?inventory.original(r.value.source):'')+(reviewing?'<button class="secondary" name="status" value="Aprobada">Aprobar</button><button class="secondary" name="status" value="Compartida">Compartir con el equipo</button>'+(r.status==='En revisión'?'<button class="secondary" name="status" value="Rechazada">Rechazar</button>':''):'')+'</div>'+(canEdit && !r?'<p id="draft-status" class="notice" role="status">'+(draft?'Borrador recuperado':'')+'</p>':'')+'<p class="error" role="alert"></p></form>');
 }
 const labFields=(prefix,values=[])=>['L*','a*','b*'].map((label,i)=>field(prefix+i,label,'number',values[i],true)).join('');
+function measurementFields(prefix,full){
+ const core='<div class="form-grid">'+labFields(prefix)+'</div>';
+ if(!full)return core;
+ return '<div class="form-grid">'+field(prefix+'Format','Formato',['CIELAB','CIELCh','XYZ','sRGB','CMYK'])+'</div>'+
+  '<div data-measure-fields="'+prefix+'Lab">'+core+'</div>'+
+  '<div data-measure-fields="'+prefix+'Alternate" hidden>'+field(prefix+'Values','Canales en orden, separados por comas')+'</div>'+
+  '<div data-measure-fields="'+prefix+'Icc" hidden><p class="notice">Ingresa CMYK en porcentaje y CIELAB convertido externamente con tu perfil ICC para las condiciones indicadas.</p>'+
+  field(prefix+'Profile','Nombre y versión del perfil ICC')+field(prefix+'IccLab','CIELAB de la conversión')+'</div>';
+}
 function measurements(){
  const full=state.user.fullAccess;
- return heading(full?'Colorimetría':'Comparar colores',full?'Compara CIELAB, interpreta desviaciones y registra resultados.':'Ingresa los valores CIELAB del patrón y de la muestra.',full?'':btn('Activar acceso completo','data-access','spark'))+
- '<form id="measure" class="panel"><div class="form-grid">'+(full?'<div class="wide">'+field('title','Nombre de la medición','text','')+'</div>':'')+'<div><h3>Patrón</h3><div class="form-grid">'+labFields('p')+'</div></div><div><h3>Muestra</h3><div class="form-grid">'+labFields('m')+'</div></div>'+field('tolerance','Tolerancia ΔE','number',2,true)+field('condition','Condición de medición',['M0','M1','M2','M3'])+field('illuminant','Iluminante / observador','text','D50 / 2°')+field('method','Método',['ΔE 2000','ΔE 76','ΔE 94 (artes gráficas)','CMC (2:1)'])+field('spectral','Reflectancia, densidad, condiciones o notas de instrumento','textarea')+'</div><div class="form-actions"><button class="primary">Calcular diferencia</button>'+(full?btn('Guardar medición','data-save-measure','check'):'')+'</div><p class="error"></p><div class="result" hidden></div></form>'+
- (full?'<div class="section-head"><h2>Mediciones guardadas</h2></div><section class="panel">'+(byKind('mediciones').map(recordRow).join('')||'<p class="empty">Aún no hay mediciones.</p>')+'</section>':'');
+ return heading(full?'Colorimetría':'Comparar colores',full?'Compara lecturas, interpreta desviaciones y conserva los datos del instrumento.':'Ingresa los valores CIELAB del patrón y de la muestra.',full?'':btn('Activar acceso completo','data-access','spark'))+
+ '<form id="measure" class="panel"><div class="form-grid">'+(full?field('title','Nombre de la medición')+field('work','Trabajo o referencia de seguimiento'):'')+
+ '<div><h3>Patrón</h3>'+measurementFields('p',full)+'</div><div><h3>Muestra</h3>'+measurementFields('m',full)+'</div>'+
+ field('tolerance','Tolerancia ΔE','number',2,true)+field('condition','Condición de medición',['M0','M1','M2','M3'])+
+ field('illuminant','Iluminante / observador','text','D50 / 2°',true)+field('method','Método',['ΔE 2000','ΔE 76','ΔE 94 (artes gráficas)','CMC (2:1)'])+
+ (full?'<details class="wide"><summary>Evidencia óptica del instrumento</summary><div class="form-grid">'+
+ field('patternDensity','Densidad óptica del patrón','number')+field('sampleDensity','Densidad óptica de la muestra','number')+
+ field('densityCondition','Canal, filtro o condición de densidad')+field('patternCurve','Reflectancia del patrón (%), una línea nm, porcentaje','textarea')+
+ field('sampleCurve','Reflectancia de la muestra (%), una línea nm, porcentaje','textarea')+'</div></details>':'')+
+ field('spectral','Notas del instrumento','textarea')+'</div><div class="form-actions"><button class="primary">Calcular diferencia</button>'+
+ (full?btn('Guardar medición','data-save-measure','check'):'')+'</div><p class="error" role="alert"></p><div class="result" hidden></div></form>'+
+ (full?'<div class="section-head"><h2>Mediciones guardadas</h2></div><section class="panel">'+(byKind('mediciones').map(measurementRow).join('')||'<p class="empty">Aún no hay mediciones.</p>')+'</section>':'');
 }
-const hue=(a,b)=>(Math.atan2(b,a)*180/Math.PI+360)%360;
-const cos=d=>Math.cos(d*Math.PI/180), sin=d=>Math.sin(d*Math.PI/180);
-function differences(p,m) {
- const [l1,a1,b1]=p,[l2,a2,b2]=m;
- const dl=l2-l1,da=a2-a1,db=b2-b1,c1=Math.hypot(a1,b1),c2=Math.hypot(a2,b2),dc=c2-c1,dh=Math.sqrt(Math.max(0,da**2+db**2-dc**2));
- const avg=(c1+c2)/2,g=.5*(1-Math.sqrt(avg**7/(avg**7+25**7)));
- const ap1=(1+g)*a1,ap2=(1+g)*a2,cp1=Math.hypot(ap1,b1),cp2=Math.hypot(ap2,b2);
- const h1=hue(ap1,b1),h2=hue(ap2,b2),d=h2-h1;
- const diff=cp1*cp2===0?0:Math.abs(d)<=180?d:d>180?d-360:d+360;
- const h=cp1*cp2===0?h1+h2:Math.abs(d)<=180?(h1+h2)/2:(h1+h2+(h1+h2<360?360:-360))/2;
- const l=(l1+l2)/2,c=(cp1+cp2)/2,t=1-.17*cos(h-30)+.24*cos(2*h)+.32*cos(3*h+6)-.20*cos(4*h-63);
- const sl=1+.015*(l-50)**2/Math.sqrt(20+(l-50)**2),sc=1+.045*c,sh=1+.015*c*t;
- const rt=-2*Math.sqrt(c**7/(c**7+25**7))*sin(60*Math.exp(-(((h-275)/25)**2)));
- const x=dl/sl,y=(cp2-cp1)/sc,z=2*Math.sqrt(cp1*cp2)*sin(diff/2)/sh;
- const hc=hue(a1,b1), f=Math.sqrt(c1**4/(c1**4+1900)), tc=hc>=164&&hc<=345?.56+Math.abs(.2*cos(hc+168)):.36+Math.abs(.4*cos(hc+35));
- const cmcl=l1<16?.511:.040975*l1/(1+.01765*l1),cmcc=.0638*c1/(1+.0131*c1)+.638,cmch=cmcc*(f*tc+1-f);
- return {dl,da,db,dc,dh,c1,c2,h1:hue(a1,b1),h2:hue(a2,b2),e:[Math.sqrt(x*x+y*y+z*z+rt*y*z),Math.hypot(dl,da,db),Math.hypot(dl,dc/(1+.045*c1),dh/(1+.015*c1)),Math.hypot(dl/(2*cmcl),dc/cmcc,dh/cmch)]};
+function toggleMeasurementFormat(select){
+ const prefix=select.name[0],format=select.value;
+ const groups={Lab:format==='CIELAB',Alternate:format!=='CIELAB',Icc:format==='CMYK'};
+ for(const [key,shown] of Object.entries(groups)){
+  const group=select.form.querySelector('[data-measure-fields="'+prefix+key+'"]');
+  group.hidden=!shown;for(const input of group.querySelectorAll('input'))input.disabled=!shown;
+ }
+}
+
+function measurementRow(record){
+ const label=record.value.work?record.value.work+' · '+record.value.target:record.value.target;
+ return '<div class="record-row"><div><strong>'+esc(record.title)+'</strong><small>'+esc(label||record.status)+'</small></div>'+
+  btn('Ver evolución','data-measure-trend='+record.id,'chart','text-button')+'</div>';
+}
+function measureTrend(record){
+ const {value:v}=record;
+ const signature=value=>JSON.stringify([value.illuminant,value.condition,value.method,Array.isArray(value.pattern)?value.pattern.map(n=>Number(n).toFixed(4)):[]]);
+ const samples=(v.work?byKind('mediciones').filter(r=>String(r.value.work||'').trim().toLowerCase()===String(v.work).trim().toLowerCase()&&signature(r.value)===signature(v)):[]).filter(r=>Number.isFinite(r.value.delta));
+ if(!samples.some(r=>r.id===record.id)&&Number.isFinite(v.delta))samples.push(record);
+ samples.sort((a,b)=>a.id-b.id);
+ const max=Math.max(1,...samples.flatMap(r=>[r.value.delta,Number(r.value.tolerance)||0]));
+ const x=i=>28+440*i/Math.max(1,samples.length-1),y=n=>103-83*n/max;
+ const line=key=>samples.map((r,i)=>x(i)+','+y(Number(r.value[key])||0)).join(' ');
+ const plot=samples.length>1?'<figure class="lab-spectrum"><svg viewBox="0 0 490 125" role="img" aria-label="ΔE y tolerancia por intento"><path d="M28 20V103H470" stroke="currentColor" fill="none"/><polyline points="'+line('tolerance')+'" fill="none" stroke="var(--pink)" stroke-dasharray="4 3"/><polyline points="'+line('delta')+'" fill="none" stroke="var(--cyan)" stroke-width="2"/></svg><figcaption>ΔE medido · tolerancia por lectura</figcaption></figure>':'<p class="notice">Guarda otra medición con el mismo trabajo, patrón, método y condición para ver la evolución.</p>';
+ const rows=samples.map((r,i)=>'<div class="record-row"><div><strong>'+esc(String(i+1)+'. '+r.title)+'</strong><small>'+esc(new Date(r.updated).toLocaleString('es-MX'))+'</small></div>'+
+  '<span>'+esc(r.value.method)+' '+r.value.delta.toFixed(2)+'</span></div>').join('');
+ modal(v.work||record.title,plot+rows);
 }
 function labColor([l,a,b]){
  const fy=(l+16)/116, f=x=>x>6/29?x**3:3*(6/29)**2*(x-4/29), x=.95047*f(fy+a/500), y=f(fy), z=1.08883*f(fy-b/200);
@@ -239,17 +269,32 @@ function labColor([l,a,b]){
 }
 const formData=f=>Object.fromEntries(new FormData(f));
 function measure(form){
- if(!form.reportValidity()) return;
- const v=formData(form),get=prefix=>[0,1,2].map(i=>Number(v[prefix+i])),p=get('p'),m=get('m');
- if([p,m].some(([l,a,b])=>l<0||l>100||Math.abs(a)>200||Math.abs(b)>200)) throw new Error('L* debe estar entre 0 y 100. Revisa también a* y b*.');
+ if(!form.reportValidity())return;
+ const v=formData(form),mode=prefix=>v[prefix+'Format']||'CIELAB';
+ const reading=prefix=>instrumentReading({format:mode(prefix),text:mode(prefix)==='CIELAB'?[0,1,2].map(i=>v[prefix+i]).join(', '):v[prefix+'Values'],
+  profile:v[prefix+'Profile'],iccLab:v[prefix+'IccLab'],condition:v.illuminant});
+ const pattern=reading('p'),sample=reading('m'),p=pattern.lab,m=sample.lab;
+ const optics=opticalEvidence(v.patternCurve,v.sampleCurve,v.patternDensity,v.sampleDensity);
+ if((optics.patternDensity!=null||optics.sampleDensity!=null)&&!v.densityCondition?.trim())throw new Error('Identifica el canal o la condición de la densidad óptica.');
  const d=differences(p,m), tolerance=Number(v.tolerance);
- if(tolerance<=0) throw new Error('La tolerancia debe ser mayor que cero.');
- const index=['ΔE 2000','ΔE 76','ΔE 94 (artes gráficas)','CMC (2:1)'].indexOf(v.method);
- const delta=d.e[Math.max(0,index)], signed=n=>(n>=0?'+':'')+n.toFixed(2);
+ if(!Number.isFinite(tolerance)||tolerance<=0)throw new Error('La tolerancia debe ser mayor que cero.');
+ const methods=['ΔE 2000','ΔE 76','ΔE 94 (artes gráficas)','CMC (2:1)'];
+ const delta=d.e[Math.max(0,methods.indexOf(v.method))], signed=n=>(n>=0?'+':'')+n.toFixed(2);
+ const previews=[displayLab(p,v.illuminant),displayLab(m,v.illuminant)];
+ const directions=[[d.dl,'más oscura','más clara'],[d.da,'hacia verde','hacia rojo'],[d.db,'hacia azul','hacia amarillo'],[d.dc,'menor croma','mayor croma']]
+  .filter(([difference])=>Math.abs(difference)>=.005).map(([difference,negative,positive])=>difference<0?negative:positive);
  const result=$('.result',form);result.hidden=false;
- result.innerHTML='<strong>'+esc(v.method)+' '+delta.toFixed(2)+' · '+(delta<=tolerance?'Dentro de tolerancia':'Fuera de tolerancia')+'</strong><div class="comparison"><span style="--ink:'+labColor(p)+'" title="Patrón"></span><span style="--ink:'+labColor(m)+'" title="Muestra"></span></div>ΔL* '+signed(d.dl)+' · Δa* '+signed(d.da)+' · Δb* '+signed(d.db)+' · ΔC* '+signed(d.dc)+' · |ΔH*| '+d.dh.toFixed(2)+'<br>LCh patrón '+p[0].toFixed(2)+', '+d.c1.toFixed(2)+', '+d.h1.toFixed(2)+'° · muestra '+m[0].toFixed(2)+', '+d.c2.toFixed(2)+', '+d.h2.toFixed(2)+'°';
- return {...v,delta,tolerance,color:labColor(m),target:v.method+' · '+delta.toFixed(2),pattern:p,sample:m};
+ result.innerHTML='<strong>'+esc(v.method)+' '+delta.toFixed(2)+' · '+(delta<=tolerance?'Dentro de tolerancia':'Fuera de tolerancia')+'</strong>'+
+ (previews.every(Boolean)?'<div class="comparison">'+previews.map((color,i)=>'<span style="--ink:'+color.hex+'" title="'+(i===0?'Patrón':'Muestra')+'"></span>').join('')+'</div><small>Vista sRGB aproximada'+(previews.some(item=>item.clipped)?' · al menos un color está fuera de gama':'')+'</small>':'')+
+ '<p>ΔL* '+signed(d.dl)+' · Δa* '+signed(d.da)+' · Δb* '+signed(d.db)+' · ΔC* '+signed(d.dc)+' · |ΔH*| '+d.dh.toFixed(2)+'</p>'+
+ '<p>Muestra respecto al patrón: '+esc(directions.join(', ')||'sin desviaciones a la precisión mostrada')+'.</p>'+
+ '<p>CIELCh del patrón '+[p[0],d.c1,d.h1].map(n=>n.toFixed(2)).join(', ')+' · muestra '+[m[0],d.c2,d.h2].map(n=>n.toFixed(2)).join(', ')+'</p>'+
+ (optics.densityDifference==null?'':'<p>Diferencia de densidad '+signed(optics.densityDifference)+'</p>')+
+ (optics.spectralRms==null?(optics.pattern.length&&optics.sample.length?'<p>Las curvas usan mallas distintas. El RMS requiere las mismas longitudes de onda.</p>':''):'<p>Error espectral RMS '+optics.spectralRms.toFixed(3)+' puntos de reflectancia.</p>');
+ const {pProfile,pIccLab,mProfile,mIccLab,pValues,mValues,...metadata}=v;
+ return {...metadata,delta,tolerance,color:previews[1]?.hex||'',target:v.method+' · '+delta.toFixed(2),pattern:p,sample:m,readings:{pattern,sample},optics};
 }
+
 function simulation(){
  const options=byKind('mediciones').map(r=>'<option value="'+r.id+'">'+esc(r.title)+'</option>').join('');
  return heading('Simulador y corrección','Compara una prueba medida con su patrón antes de ajustar el lote.')+
@@ -262,8 +307,11 @@ function simulate(form){
  if(adjusted[0]<0||adjusted[0]>100||adjusted.slice(1).some(n=>Math.abs(n)>200))throw new Error('Revisa los valores CIELAB de la prueba.');
  const method=['ΔE 2000','ΔE 76','ΔE 94 (artes gráficas)','CMC (2:1)'].indexOf(r.value.method);
  const delta=differences(r.value.pattern,adjusted).e[Math.max(method,0)];
- const result=$('.result',form);result.hidden=false;result.innerHTML='<div class="comparison">'+[r.value.pattern,r.value.sample,adjusted].map((lab,i)=>'<span style="--ink:'+labColor(lab)+'" title="'+['Patrón','Muestra inicial','Muestra ajustada'][i]+'"></span>').join('')+'</div>Patrón · Muestra inicial · Muestra ajustada<br>ΔE antes '+r.value.delta.toFixed(2)+' · ΔE después '+delta.toFixed(2)+' · '+(delta<=r.value.tolerance?'Dentro de tolerancia':'Fuera de tolerancia');
- return {measurement:r.id,adjusted,delta,change:v.change,color:labColor(adjusted),target:'ΔE '+delta.toFixed(2),title:r.title};
+ const colors=[r.value.pattern,r.value.sample,adjusted].map(lab=>displayLab(lab,r.value.illuminant));
+ const result=$('.result',form);result.hidden=false;
+ result.innerHTML=(colors.every(Boolean)?'<div class="comparison">'+colors.map((color,i)=>'<span style="--ink:'+color.hex+'" title="'+['Patrón','Muestra inicial','Muestra ajustada'][i]+'"></span>').join('')+'</div>':'')+
+  'Patrón · Muestra inicial · Muestra ajustada<br>ΔE antes '+r.value.delta.toFixed(2)+' · ΔE después '+delta.toFixed(2)+' · '+(delta<=r.value.tolerance?'Dentro de tolerancia':'Fuera de tolerancia');
+ return {measurement:r.id,adjusted,delta,method:r.value.method,condition:r.value.condition,illuminant:r.value.illuminant,change:v.change,color:colors[2]?.hex||'',target:'ΔE '+delta.toFixed(2),title:r.title};
 }
 const lessons=[
  ['Teoría del color','El tono identifica la familia cromática, el croma indica su intensidad y L* describe la luminosidad.','¿Qué expresa L*?',['Luminosidad','Tono','Viscosidad']],
@@ -377,6 +425,10 @@ document.addEventListener('click',async event=>{
    el.disabled=true;
    try{if(await lab.click(el))return;}finally{el.disabled=el.dataset.saved==='true';}
   }
+  if(Object.keys(d).some(key=>key.startsWith('prepared'))){
+   el.disabled=true;
+   try{if(await prepared.click(el))return;}finally{el.disabled=false;}
+  }
   if(Object.keys(d).some(key=>key.startsWith('quality'))){
    el.disabled=true;
    try{if(await quality.click(el))return;}finally{el.disabled=false;}
@@ -387,6 +439,8 @@ document.addEventListener('click',async event=>{
   }
   if(d.inventoryOpen)return inventory.open(d.inventoryOpen);
   if(d.stockMovement)return await inventory.movement(d.stockMovement);
+  if(d.measureTrend){const row=byKind('mediciones').find(r=>r.id===Number(d.measureTrend));if(row)measureTrend(row);return;}
+  if(d.duplicateFormula){const row=byKind('formulas').find(r=>r.id===Number(d.duplicateFormula));if(row)await editor('formulas',row,true);return;}
   if(d.view)return navigate(d.view);
   if(d.close!==undefined)return dialog.close();
   if(d.new)return await editor(d.new);
@@ -442,6 +496,12 @@ document.addEventListener('submit',async event=>{
  const form=event.target;event.preventDefault();const data=formData(form), error=$('.error',form);
  if(error)error.textContent='';
  try{
+  if(form.dataset.prepared){
+   if(form.dataset.prepared==='scale'){prepared.scaled(form);return;}
+   const button=event.submitter;if(button)button.disabled=true;
+   try{await prepared.submit(form);}finally{if(button)button.disabled=false;}
+   return;
+  }
   if(form.dataset.qualityForm){
    const button=event.submitter;if(button)button.disabled=true;
    try{await quality.submit(form);}finally{if(button)button.disabled=false;}
@@ -489,7 +549,12 @@ document.addEventListener('submit',async event=>{
     if(kind==='formulas' && status==='En revisión')recipe(data);
     await flushDraft();
     const {title,...fields}=data;
+    const original=kind==='formulas'&&form.dataset.copy?byKind('formulas').find(r=>r.id===Number(form.dataset.copy)):null;
     const previous=state.records.find(r=>r.id===id)?.value;
+    if(original){
+     fields.derivedFromFormula=original.id;
+     fields.evidenceType=original.value.evidenceType==='Teórica'?'Teórica':'Manual';
+    }
     const value={...previous,...fields};if(kind==='colores')value.favorite=data.favorite==='on';
     if(kind==='inventario'){
      value.stockVerified=data.stockVerified==='on';
@@ -556,11 +621,12 @@ document.addEventListener('input',event=>{
  }
  if(el.id==='hue')$('#hue-result').textContent=el.value+'° · Complementario '+((Number(el.value)+180)%360)+'°';
 });
-document.addEventListener('change',event=>{lab.change(event.target);if(event.target.id==='chart-days'){state.chartDays=Number(event.target.value);render();$('#chart-days').focus();}});
+document.addEventListener('change',event=>{lab.change(event.target);if(event.target.form?.id==='measure'&&['pFormat','mFormat'].includes(event.target.name))toggleMeasurementFormat(event.target);if(event.target.id==='chart-days'){state.chartDays=Number(event.target.value);render();$('#chart-days').focus();}});
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();search();}});
 dialog.addEventListener('close',flushDraft);
 window.addEventListener('popstate',()=>navigate(views[location.hash.slice(1)]?location.hash.slice(1):'inicio'));
 const inventory=createInventory({state,esc,field,btn,modal,api,refresh,render,toast});
+const prepared=createPrepared({state,field,esc,heading,btn,modal,api,refresh,render,toast,delta:(a,b)=>differences(a,b).e[0],recipe});
 const quality=createQuality({state,esc,field,heading,btn,modal,api,refresh,render,toast,download});
 const colorTools=createColorTools({state,esc,field,heading,btn,modal,api,refresh,render,toast,delta:(a,b)=>differences(a,b).e[0],labColor});
 const lab=createLab({state,esc,field,heading,btn,modal,auth,api,refresh,render,toast,statusTag,delta:(pattern,sample)=>differences(pattern,sample).e[0]});

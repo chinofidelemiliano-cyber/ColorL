@@ -59,7 +59,7 @@ export function createInventory({state,esc,field,btn,modal,api,refresh,render,to
   }
  }
  async function movement(id){
-  const r=own('inventario',id);
+  const r=own('inventario',id)||own('preparados',id);
   if(!r)return;
   const entries=await api('stock-movement?id='+id);
   const history=entries.map(entry=>'<div class="record-row"><div><strong>'+esc(entry.reason)+'</strong><small>'+esc(new Date(entry.created).toLocaleString('es-MX'))+' · saldo '+kg(entry.quantity)+'</small></div>'+esc((entry.amount>0?'+':'')+kg(entry.amount))+'</div>').join('');

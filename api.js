@@ -43,7 +43,7 @@ function isOwnerBootstrap(config,email,code){
 const shareScopes = ['Todo el equipo','Laboratorio y supervisión','Solo supervisión'];
 const inkCode = code => String(code??'').trim().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
 const inkTechnology = technology => ['Base agua','UV','Base solvente'].includes(technology);
-const kinds = new Set(['colores','formulas','mediciones','correcciones','inventario','anilox','academia','componentes','tintas','caracterizaciones','catalogos','curvas','calidad-estudios','calidad-acciones']);
+const kinds = new Set(['colores','formulas','mediciones','correcciones','inventario','anilox','academia','componentes','tintas','caracterizaciones','catalogos','curvas','calidad-estudios','calidad-acciones','preparados']);
 
 async function body(req,limit=200000) {
  let data = '';
@@ -204,6 +204,35 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
    }
    return fail(400,'Borrador inválido');
   }
+  if(path==='/api/prepared-photo' && method==='GET'){
+   const id=Number(url.searchParams.get('id'));
+   if(!Number.isSafeInteger(id)||id<=0)return fail(404,'Fotografía no disponible.');
+   const record=await query(`SELECT source.data,json_extract(r.value,'$.photoType') AS type FROM records r
+    JOIN catalog_sources source ON source.id=json_extract(r.value,'$.photo') AND source.owner=r.owner
+    WHERE r.id=? AND r.owner=? AND r.kind='preparados'`).get(id,owner);
+   if(!record||!['image/png','image/jpeg','image/webp'].includes(record.type))return fail(404,'Fotografía no disponible.');
+   return new Response(Uint8Array.from(atob(record.data),c=>c.charCodeAt(0)),{headers:{'Content-Type':record.type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+  }
+  if(path==='/api/prepared-photo' && method==='POST'){
+   if(['operador','estudiante'].includes(session.role))return fail(403,'Permiso insuficiente');
+   const {id,filename,data}=await body(req,1370000);
+   if(!Number.isSafeInteger(id)||typeof filename!=='string'||!filename.trim()||filename.length>180||typeof data!=='string'||
+    !data||data.length>1333336||data.length%4||!/^([A-Za-z0-9+/]+)={0,2}$/.test(data))return fail(400,'Selecciona una imagen válida de hasta 1 MB.');
+   const bytes=atob(data), type=bytes.startsWith('\x89PNG\r\n\x1a\n')?'image/png':
+    bytes.startsWith('\xff\xd8\xff')?'image/jpeg':bytes.startsWith('RIFF')&&bytes.slice(8,12)==='WEBP'?'image/webp':'';
+   if(!type||bytes.length>1_000_000)return fail(400,'Usa una imagen PNG, JPEG o WebP de hasta 1 MB.');
+   const source=crypto.randomUUID(), updated=now();
+   const result=await batch([
+    [`INSERT INTO catalog_sources(id,owner,filename,data) SELECT ?,?,?,? FROM records
+       WHERE id=? AND owner=? AND kind='preparados' AND status<>'Archivada'`,[source,owner,filename,data,id,owner]],
+    [`UPDATE records SET value=json_set(value,'$.photo',?,'$.photoType',?),updated=?
+       WHERE id=? AND owner=? AND kind='preparados' AND EXISTS(SELECT 1 FROM catalog_sources WHERE id=? AND owner=?)`,[source,type,updated,id,owner,source,owner]],
+    [`INSERT INTO history(actor,record_id,snapshot,created) SELECT ?,id,json_object('kind',kind,'title',title,'value',json(value),'status',status),?
+      FROM records WHERE id=? AND owner=? AND kind='preparados' AND json_extract(value,'$.photo')=?`,[owner,updated,id,owner,source]]
+   ]);
+   if(!result[1].changes)return fail(404,'El lote no está disponible.');
+   return json(200,{ok:true});
+  }
   if (path === '/api/catalog-source' && method === 'GET') {
    const item = await query('SELECT filename,data FROM catalog_sources WHERE id=? AND owner=?').get(url.searchParams.get('id'),owner);
    if(!item)return fail(404,'Archivo no disponible');
@@ -268,7 +297,7 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
    const changed=now(), movement=crypto.randomUUID();
    const [write]=await batch([
     [`UPDATE records SET value=json_set(value,'$.quantity',round(CAST(json_extract(value,'$.quantity') AS REAL)+?,6),
-     '$.lastMovement',?),updated=? WHERE id=? AND owner=? AND kind='inventario' AND status<>'Archivada'
+     '$.lastMovement',?),updated=? WHERE id=? AND owner=? AND kind IN ('inventario','preparados') AND status<>'Archivada'
      AND json_extract(value,'$.quantity') IS NOT NULL AND json_extract(value,'$.quantity')!='' AND round(CAST(json_extract(value,'$.quantity') AS REAL)+?,6)>=0`,
      [amount,movement,changed,id,owner,amount]],
     [`INSERT INTO history(actor,record_id,snapshot,created)
@@ -287,7 +316,7 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
     json_extract(history.snapshot,'$.movement.reason') AS reason,
     json_extract(history.snapshot,'$.value.quantity') AS quantity
     FROM history JOIN records ON records.id=history.record_id
-    WHERE records.owner=? AND records.kind='inventario' AND records.id=?
+    WHERE records.owner=? AND records.kind IN ('inventario','preparados') AND records.id=?
     AND json_type(history.snapshot,'$.movement')='object' ORDER BY history.id DESC LIMIT 100`).all(owner,id));
   }
   if (path === '/api/catalog-import' && method === 'POST') {
@@ -360,11 +389,43 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
   });
   if (path === '/api/records' && method === 'POST') {
    const {id,kind,title,value={},status='Borrador'} = await body(req);
-   if (!kinds.has(kind) || typeof title !== 'string' || !title.trim() || !value || typeof value !== 'object' || !['Borrador','En revisión','Aprobada','Compartida','Registrada','Completada','Archivada'].includes(status)) return fail(400,'Registro inválido');
+   if (!kinds.has(kind) || typeof title !== 'string' || !title.trim() || !value || typeof value !== 'object' || !['Borrador','En revisión','Aprobada','Compartida','Rechazada','Registrada','Completada','Archivada'].includes(status)) return fail(400,'Registro inválido');
    const existing = id == null ? null : await query('SELECT * FROM records WHERE id=?').get(id);
    const review = ['administrador','supervisor'].includes(session.role);
-   const reviewing = existing?.kind==='formulas' && kind==='formulas' && review && ['En revisión','Aprobada','Compartida'].includes(existing.status) && ['Aprobada','Compartida'].includes(status);
-   if ((id != null && (!existing || existing.kind!==kind || (existing.owner!==owner && !reviewing))) || (session.role==='estudiante' && kind!=='academia') || (session.role==='operador' && kind!=='mediciones') || (kind==='formulas' && ['Aprobada','Compartida'].includes(status) && !reviewing)) return fail(403,'Permiso insuficiente');
+   const reviewing = existing?.kind==='formulas' && kind==='formulas' && review && ['En revisión','Aprobada','Compartida'].includes(existing.status) && (['Aprobada','Compartida'].includes(status)||(existing.status==='En revisión'&&status==='Rechazada'));
+   if ((id != null && (!existing || existing.kind!==kind || (existing.owner!==owner && !reviewing))) || (session.role==='estudiante' && kind!=='academia') || (session.role==='operador' && kind!=='mediciones') || (kind==='formulas' && ['Aprobada','Compartida','Rechazada'].includes(status) && !reviewing)) return fail(403,'Permiso insuficiente');
+   if(kind==='preparados'){
+    const previous=existing?JSON.parse(existing.value):null;
+    const validDate=/^\d{4}-\d{2}-\d{2}$/.test(value.date||'')&&Number.isFinite(Date.parse(value.date))&&new Date(value.date).toISOString().slice(0,10)===value.date;
+    const preparedKg=Number(value.preparedKg), quantity=previous?.quantity??Number(value.quantity);
+    if(!['target','lot','responsible'].every(key=>typeof value[key]==='string'&&value[key].trim())||!validDate||
+     !Number.isFinite(preparedKg)||preparedKg<=0||preparedKg>1e7||!Number.isFinite(quantity)||quantity<0||
+     (!previous&&(value.quantity==null||String(value.quantity).trim()===''||quantity>preparedKg))||
+     ['delta','cost'].some(key=>value[key]!==''&&value[key]!=null&&(!Number.isFinite(Number(value[key]))||Number(value[key])<0)))
+     return fail(400,'Verifica los datos del lote, las cantidades, la fecha y sus mediciones.');
+    if(value.reuseStatus==='Verificado'&&(!inkTechnology(value.technology)||!String(value.family||'').trim()||!String(value.substrate||'').trim()||
+      !String(value.lab||'').trim()||!String(value.illuminant||'').trim()||!['M0','M1','M2','M3'].includes(value.condition)||
+      !String(value.reuseEvidence||'').trim()||!['expiry','reuseUntil'].every(key=>/^\d{4}-\d{2}-\d{2}$/.test(value[key]||'')&&Number.isFinite(Date.parse(value[key]))&&new Date(value[key]).toISOString().slice(0,10)===value[key])))
+     return fail(400,'Para verificar el sobrante, registra caducidad, vigencia, tecnología, familia, sustrato, lectura y evidencia.');
+    const fields=['target','lot','location','date','technology','family','expiry','reuseStatus','reuseUntil','reuseEvidence','customer','work','anilox','substrate','lab','condition','illuminant','delta','responsible','cost','currency','notes','components'];
+    const editable=Object.fromEntries(fields.map(key=>[key,String(value[key]??'').trim().slice(0,8000)]));
+    let formula=null;
+    if(!previous&&value.formulaId!=null){
+     if(!Number.isSafeInteger(value.formulaId))return fail(400,'Fórmula de origen inválida.');
+     formula=await query(`SELECT id,title,value,status FROM records WHERE kind='formulas' AND id=?
+      AND (owner=? OR (status='Compartida' AND (
+        ? OR COALESCE(json_extract(value,'$.shareScope'),'Todo el equipo')='Todo el equipo'
+        OR (? AND json_extract(value,'$.shareScope')='Laboratorio y supervisión'))))`).get(value.formulaId,owner,Number(review),Number(session.role==='laboratorista'));
+     if(!formula)return fail(403,'La fórmula de origen no está disponible.');
+    }
+    const snapshot=formula?JSON.parse(formula.value):null;
+    const linked=previous?{
+     formulaId:previous.formulaId,formulaTitle:previous.formulaTitle,formulaStatus:previous.formulaStatus,originalComponents:previous.originalComponents,
+     photo:previous.photo,photoType:previous.photoType,lastMovement:previous.lastMovement
+    }:{formulaId:formula?.id??null,formulaTitle:formula?.title??'',formulaStatus:formula?.status??'',originalComponents:snapshot?.components||editable.components};
+    for(const key of Object.keys(value))delete value[key];
+    Object.assign(value,editable,linked,{preparedKg,quantity,components:editable.components||snapshot?.components||''});
+   }
    if(kind==='inventario'&&existing){
     const current=JSON.parse(existing.value);
     if(current.quantity!=null&&current.quantity!==''){
@@ -415,14 +476,14 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
    const updated = now(), serialized = JSON.stringify(value);
    const finalTitle = reviewing ? existing.title : title.trim().slice(0,100);
    const previous=reviewing?JSON.parse(existing.value):null;
-   if(previous?.evidenceType==='Experimental'){
+   if(previous?.evidenceType==='Experimental'&&status!=='Rechazada'){
     const trial=Number.isSafeInteger(previous.evidenceId)&&await query(`SELECT id FROM records
       WHERE id=? AND owner=? AND kind='caracterizaciones' AND status<>'Archivada'
        AND json_extract(value,'$.verified')=1 AND json_extract(value,'$.mode')='mezcla'`).get(previous.evidenceId,existing.owner);
     if(!trial)return fail(400,'La fórmula experimental requiere un ensayo de mezcla verificado para aprobarse.');
    }
    const finalValue = reviewing
-    ? JSON.stringify({...previous,...(previous.evidenceType==='Experimental'?{evidenceType:'Validada'}:{}),...(status==='Compartida' ? {shareScope:shareScopes.includes(value.shareScope) ? value.shareScope : shareScopes[0]} : {})})
+    ? JSON.stringify({...previous,...(previous.evidenceType==='Experimental'&&status!=='Rechazada'?{evidenceType:'Validada'}:{}),...(status==='Compartida' ? {shareScope:shareScopes.includes(value.shareScope) ? value.shareScope : shareScopes[0]} : {})})
     : serialized;
    const snapshot = JSON.stringify({kind,title:finalTitle,value:JSON.parse(finalValue),status});
    const write = existing

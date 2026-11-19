@@ -110,7 +110,7 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
  const targetFields=()=>options('pattern','Patrón guardado',own('colores'))+field('format','Formato de los valores',['CIELAB','CIELCh'])+
   labInput('target','Patrón manual (tres valores, separados por comas)')+field('tolerance','Tolerancia ΔE 2000','number',2,true);
  views.igualacion=()=>heading('Igualación inteligente','Compara ensayos verificados de tu catálogo, evalúa correcciones y documenta cada medición.')+
-  '<details class="panel lab-detail" open><summary>Proponer fórmula</summary><form data-lab="formula"><div class="form-grid">'+targetFields()+conditions()+field('batch','Cantidad a preparar (g)','number','',true)+'</div><div class="form-actions"><button class="primary">Buscar fórmulas ensayadas</button></div>'+output+'</form></details>'+
+  '<details class="panel lab-detail" open><summary>Proponer fórmula</summary><form data-lab="formula"><div class="form-grid">'+targetFields()+conditions()+field('batch','Cantidad a preparar (g)','number','',true)+field('exclude','Excluir códigos de tinta (separados por comas)')+'</div><div class="form-actions"><button class="primary">Buscar fórmulas ensayadas</button></div>'+output+'</form></details>'+
   '<details class="panel lab-detail"><summary>Corregir una muestra</summary><form data-lab="correction"><div class="form-grid">'+targetFields()+conditions()+
   options('measurement','Medición inicial guardada',measures())+labInput('current','Muestra manual (tres valores)')+field('reported','ΔE informado por el instrumento (opcional)','number')+
   field('parts','Mezcla actual en orden (un código: gramos por línea)','textarea','',true)+
@@ -133,8 +133,9 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
  }
  function showFormulas(form,input){
   const color=target(input),ctx=context(input),batch=positive(input.batch,'El tamaño del lote'), tolerance=positive(input.tolerance,'La tolerancia');
-  const eligible=available();
-  const candidates=formulations(trials(),eligible,{target:color,conditions:ctx,batch},delta)
+  const excluded=String(input.exclude||'').split(/[,;]+/).map(normalize).filter(Boolean);
+  const eligible=available().filter(ink=>!excluded.includes(normalize(ink.value.code)));
+  const candidates=formulations(trials(),eligible,{target:color,conditions:ctx,batch,tolerance},delta)
    .map(candidate=>({...candidate,cost:lotCost(candidate.parts,eligible)}));
   pending.set(form,{candidates,input,ctx,batch});
   result(form,candidates.length?candidates.map(({record,parts,delta:distance,best,count,cost},index)=>'<section class="lab-candidate"><h3>'+esc(record.title)+'</h3><p>ΔE₀₀ '+(count===1?'del ensayo '+distance.toFixed(2):'observado '+best.toFixed(2)+'–'+distance.toFixed(2)+' en '+count+' ensayos')+' · '+(distance<=tolerance?'Dentro de tolerancia en las pruebas':'Requiere una nueva prueba')+'</p>'+

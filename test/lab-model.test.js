@@ -52,3 +52,11 @@ test('interpreta CIELCh, revisa curvas y extrae catálogos con comillas y separa
  const rows=parseSeparated('Código;Nombre;Tecnología\nK1;"Rojo; vivo";Base agua\n');
  assert.deepEqual(organize([rows])[0],{code:'K1',name:'Rojo; vivo',technology:'Base agua',color:'',colorName:''});
 });
+
+test('prioriza una fórmula aprobada solo si el ensayo cumple la tolerancia',()=>{
+ const observed={title:'Ensayo',value:{verified:true,mode:'mezcla',conditions,parts,after:[50,0,0]}};
+ const approved={title:'Aprobada',approvedFormula:{id:10},value:{...observed.value,after:[50.5,0,0],parts:[{id:1,grams:80},{id:2,grams:20}]}};
+ const search=tolerance=>formulations([observed,approved],inks,{target:[50,0,0],conditions,batch:100,tolerance},delta);
+ assert.equal(search(1)[0].record.title,'Aprobada');
+ assert.equal(search(.1)[0].record.title,'Ensayo');
+});

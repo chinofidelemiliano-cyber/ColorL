@@ -36,7 +36,7 @@ function allowAuth(ip){
  rates.set(ip,rate);
  return ++rate.count<=25;
 }
-const files = {'/':'index.html','/styles.css':'styles.css','/app.js':'app.js','/lab.js':'lab.js','/lab-model.js':'lab-model.js','/inventory-import.js':'inventory-import.js','/inventory.js':'inventory.js','/print-calculations.js':'print-calculations.js','/color-standards.js':'color-standards.js','/spectral-model.js':'spectral-model.js','/color-tools.js':'color-tools.js','/quality.js':'quality.js','/quality-model.js':'quality-model.js','/catalog-import.js':'catalog-import.js','/delimited.js':'delimited.js','/hero.webp':'hero.webp','/hero.png':'hero.png'};
+const files = {'/':'index.html','/styles.css':'styles.css','/app.js':'app.js','/lab.js':'lab.js','/lab-model.js':'lab-model.js','/inventory-import.js':'inventory-import.js','/inventory.js':'inventory.js','/print-calculations.js':'print-calculations.js','/color-standards.js':'color-standards.js','/spectral-model.js':'spectral-model.js','/color-tools.js':'color-tools.js','/quality.js':'quality.js','/instrument.js':'instrument.js','/prepared.js':'prepared.js','/reuse.js':'reuse.js','/quality-model.js':'quality-model.js','/catalog-import.js':'catalog-import.js','/delimited.js':'delimited.js','/hero.webp':'hero.webp','/hero.png':'hero.png'};
 const mime = {html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',mjs:'text/javascript; charset=utf-8',wasm:'application/wasm',webp:'image/webp',png:'image/png'};
 
 

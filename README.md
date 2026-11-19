@@ -74,3 +74,13 @@ En **Predicción espectral → Registrar serie óptica**, guarda una matriz con 
 En **Control de calidad**, registra lecturas individuales en orden para generar cartas **I–MR**. Los límites de control se calculan de los datos, y los límites de especificación se introducen por separado. Los índices preliminares se calculan con al menos 25 observaciones, una variación medible, las especificaciones y los supuestos confirmados. Las cartas implementan la señal de un punto fuera de límite. Esto no sustituye una evaluación de estabilidad, normalidad o MSA. Los estudios guardados se pueden exportar a Excel o imprimir como PDF desde el navegador.
 
 El Pareto acepta una categoría y frecuencia por línea. Las acciones correctivas registran responsable, fecha, contención, análisis de los cinco porqués, acción permanente y verificación. Para cerrar una acción, registra qué se hizo y cómo se comprobó su efectividad.
+
+## Mediciones del instrumento y colores preparados
+
+En **Colorimetría** una cuenta de laboratorio puede ingresar CIELAB, CIELCh, XYZ relativo con Y del blanco igual a 100 o sRGB. XYZ se convierte con blanco D50 o D65 para 2° y 10°. La vista aproximada sRGB usa 2° y adaptación Bradford para D50. Para CMYK, registra los valores originales, el nombre y la versión del perfil ICC y el CIELAB calculado por tu sistema de gestión de color. ColorL conserva el resultado de esa conversión. El RMS espectral requiere la misma malla de longitudes de onda. Registra también el canal o filtro si capturas densidad óptica.
+
+Guarda las mediciones con el mismo identificador de trabajo, patrón y método para abrir **Ver evolución**. El gráfico agrupa lecturas compatibles y muestra su tolerancia. En formulación se priorizan los ensayos vinculados a fórmulas aprobadas cuando cumplen la tolerancia solicitada.
+
+En **Colores preparados**, vincula una fórmula disponible para guardar su receta de origen junto al lote. Puedes conservar la lectura final, ubicación, cliente, responsable, costos y una fotografía privada de hasta 1 MB. El saldo posterior cambia mediante **Movimientos del lote** y cada operación queda en el historial. Dos lotes pueden compararse visualmente y mediante ΔE₀₀ si sus condiciones de medición coinciden.
+
+**Buscar sobrantes aptos** filtra por tecnología, familia, sustrato, condiciones de medición, caducidad, vigencia de la revisión y tolerancia. Presenta opciones de uso directo. El costo de compra evitada se calcula a partir del precio de tinta fresca que introduzcas y excluye los costos de reacondicionamiento. Para registrar el material recuperado, anota la salida y el motivo en los movimientos del lote.
