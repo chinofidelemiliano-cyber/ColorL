@@ -16,6 +16,7 @@
     "@tesseract.js-data/eng": "1.0.0",
     "@tesseract.js-data/spa": "1.0.0",
     "exceljs": "4.4.0",
+    "jszip": "3.10.1",
     "pdfjs-dist": "6.5.438",
     "tesseract.js": "7.0.0"
   }

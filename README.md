@@ -84,3 +84,15 @@ Guarda las mediciones con el mismo identificador de trabajo, patrón y método p
 En **Colores preparados**, vincula una fórmula disponible para guardar su receta de origen junto al lote. Puedes conservar la lectura final, ubicación, cliente, responsable, costos y una fotografía privada de hasta 1 MB. El saldo posterior cambia mediante **Movimientos del lote** y cada operación queda en el historial. Dos lotes pueden compararse visualmente y mediante ΔE₀₀ si sus condiciones de medición coinciden.
 
 **Buscar sobrantes aptos** filtra por tecnología, familia, sustrato, condiciones de medición, caducidad, vigencia de la revisión y tolerancia. Presenta opciones de uso directo. El costo de compra evitada se calcula a partir del precio de tinta fresca que introduzcas y excluye los costos de reacondicionamiento. Para registrar el material recuperado, anota la salida y el motivo en los movimientos del lote.
+
+## Biblioteca cromática digital e ingeniería
+
+En **Biblioteca de colores → Biblioteca cromática digital → Importar biblioteca ZIP**, carga un paquete de hasta 1 MB con `colores.csv`, `tintas_base.csv`, `formulas.csv` e imágenes PNG bajo `imagenes/`. Confirma que cuentas con autorización para usar la colección. El archivo se almacena en la cuenta que lo carga. El buscador permite filtrar por código, HEX y familia y estimar cercanía con CIELAB o CIELCh D65 / 2°. Los HEX y las imágenes del paquete son aproximaciones. Las lecturas físicas se registran como patrones medidos independientes con sus propias condiciones y origen.
+
+Las recetas de referencia se vinculan por código y sistema y se escalan por masa. El paquete aportado identifica recetas documentadas pendientes de validación. No cambia el inventario de tintas ni crea sustituciones entre sistemas.
+
+**Ingeniería flexográfica** contiene calculadoras de GAP, TH, desarrollo y producción, distorsión, conversiones, consumo, bobinas, OEE, fase circunferencial y montaje axial. Se pueden guardar resultados y abrirlos para exportarlos en Excel o imprimirlos como PDF.
+
+En los catálogos las dimensiones de cilindros sin medir se conservan como pendientes. Registra por separado el diámetro físico, el paso y los dientes. Para el cálculo axial, primero crea una máquina con la constante y su origen documentados. Vincula el suaje, el cilindro y la estación a esa máquina y usa la misma referencia axial en las fichas. El sistema comprueba la coincidencia del engrane y el ancho útil. La fase circunferencial se calcula por separado a partir de un diente de referencia y un sentido definidos.
+
+**Nueva orden técnica** reúne un cálculo de producción guardado y las fichas seleccionadas. Puedes adjuntar cálculos de montaje y distorsión y registrar inspecciones y una referencia de recorrido autorizado. La orden se guarda como borrador, muestra campos pendientes y se imprime o exporta en Excel.

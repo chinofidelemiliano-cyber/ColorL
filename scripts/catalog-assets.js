@@ -7,6 +7,8 @@ await mkdir(to(''),{recursive:true});
 const files={
  'pdf.mjs':'pdfjs-dist/build/pdf.min.mjs',
  'pdf.worker.mjs':'pdfjs-dist/build/pdf.worker.min.mjs',
+ 'jszip.js':'jszip/dist/jszip.min.js',
+ 'jszip-LICENSE':'jszip/LICENSE.markdown',
  'exceljs.js':'exceljs/dist/exceljs.min.js',
  'tesseract.js':'tesseract.js/dist/tesseract.esm.min.js',
  'ocr.worker.js':'tesseract.js/dist/worker.min.js',

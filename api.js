@@ -43,7 +43,7 @@ function isOwnerBootstrap(config,email,code){
 const shareScopes = ['Todo el equipo','Laboratorio y supervisión','Solo supervisión'];
 const inkCode = code => String(code??'').trim().normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
 const inkTechnology = technology => ['Base agua','UV','Base solvente'].includes(technology);
-const kinds = new Set(['colores','formulas','mediciones','correcciones','inventario','anilox','academia','componentes','tintas','caracterizaciones','catalogos','curvas','calidad-estudios','calidad-acciones','preparados']);
+const kinds = new Set(['colores','formulas','mediciones','correcciones','inventario','anilox','academia','componentes','tintas','caracterizaciones','catalogos','curvas','calidad-estudios','calidad-acciones','preparados','pack-color','ing-cilindro','ing-maquina','ing-suaje','ing-yunque','ing-material','ing-calculo','ing-orden']);
 
 async function body(req,limit=200000) {
  let data = '';
@@ -233,6 +233,26 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
    if(!result[1].changes)return fail(404,'El lote no está disponible.');
    return json(200,{ok:true});
   }
+  if(path==='/api/reference-pack' && method==='POST'){
+   if(['operador','estudiante'].includes(session.role))return fail(403,'Permiso insuficiente');
+   const {filename,data,colors,formulas,bases,authorized}=await body(req,1390000);
+   if(authorized!==true||typeof filename!=='string'||filename.length>180||!/\.zip$/i.test(filename)||
+      typeof data!=='string'||!data||data.length>1333336||data.length%4||!/^[A-Za-z0-9+/]+={0,2}$/.test(data)||
+      !['colors','formulas','bases'].every(key=>Number.isSafeInteger({colors,formulas,bases}[key])&&{colors,formulas,bases}[key]>=0&&{colors,formulas,bases}[key]<=5000))
+    return fail(400,'Verifica el ZIP y confirma la autorización para usar sus datos.');
+   const bytes=atob(data);
+   if(!bytes.startsWith('PK\x03\x04')||bytes.length>1_000_000)return fail(400,'Usa un archivo ZIP de hasta 1 MB.');
+   const source=crypto.randomUUID(),updated=now(),fingerprint=await hash(data);
+   const value=JSON.stringify({source,colors,formulas,bases,fingerprint,sourceType:'Referencia digital aportada',authorized:true});
+   const existing=await query("SELECT id FROM records WHERE owner=? AND kind='pack-color' AND json_extract(value,'$.fingerprint')=?").get(owner,fingerprint);
+   if(existing)return fail(409,'Este ZIP ya está cargado en tu biblioteca.');
+   await batch([
+    ['INSERT INTO catalog_sources VALUES(?,?,?,?)',[source,owner,filename,data]],
+    ["INSERT INTO records(owner,kind,title,value,status,updated) VALUES(?,'pack-color',?,?,'Registrada',?)",[owner,filename,value,updated]],
+    ["INSERT INTO history(actor,record_id,snapshot,created) VALUES(?,last_insert_rowid(),?,?)",[owner,JSON.stringify({kind:'pack-color',title:filename,value:JSON.parse(value),status:'Registrada'}),updated]]
+   ]);
+   return json(200,{ok:true});
+  }
   if (path === '/api/catalog-source' && method === 'GET') {
    const item = await query('SELECT filename,data FROM catalog_sources WHERE id=? AND owner=?').get(url.searchParams.get('id'),owner);
    if(!item)return fail(404,'Archivo no disponible');
@@ -389,7 +409,7 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
   });
   if (path === '/api/records' && method === 'POST') {
    const {id,kind,title,value={},status='Borrador'} = await body(req);
-   if (!kinds.has(kind) || typeof title !== 'string' || !title.trim() || !value || typeof value !== 'object' || !['Borrador','En revisión','Aprobada','Compartida','Rechazada','Registrada','Completada','Archivada'].includes(status)) return fail(400,'Registro inválido');
+   if (!kinds.has(kind) || kind==='pack-color' || typeof title !== 'string' || !title.trim() || !value || typeof value !== 'object' || !['Borrador','En revisión','Aprobada','Compartida','Rechazada','Registrada','Completada','Archivada'].includes(status)) return fail(400,'Registro inválido');
    const existing = id == null ? null : await query('SELECT * FROM records WHERE id=?').get(id);
    const review = ['administrador','supervisor'].includes(session.role);
    const reviewing = existing?.kind==='formulas' && kind==='formulas' && review && ['En revisión','Aprobada','Compartida'].includes(existing.status) && (['Aprobada','Compartida'].includes(status)||(existing.status==='En revisión'&&status==='Rechazada'));

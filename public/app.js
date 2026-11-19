@@ -1,3 +1,5 @@
+import {createEngineering} from './engineering.js';
+import {createReferenceLibrary} from './reference-library.js';
 import {createPrepared} from './prepared.js';
 import {differences,displayLab,instrumentReading,opticalEvidence} from './instrument.js';
 import {createQuality} from './quality.js';
@@ -21,7 +23,7 @@ const btn = (label,attrs='',icon='',kind='secondary') => '<button type="button" 
 const navGroups = [
  ['GENERAL',[['inicio','Panel de inicio','home']]],
  ['LABORATORIO',[['formulas','Formulación','flask'],['igualacion','Igualación inteligente','spark'],['tintas','Catálogo de tintas','drop'],['caracterizaciones','Caracterización','sliders'],['espectral','Predicción espectral','chart'],['colores','Biblioteca de colores','palette'],['mediciones','Colorimetría','chart'],['correcciones','Simulador y corrección','sliders'],['asistente','Asistente técnico','spark']]],
- ['GESTIÓN',[['inventario','Inventario de tintas','box'],['preparados','Colores preparados','palette'],['anilox','Inventario de anilox','grid'],['historial','Historial y reportes','history'],['calidad','Control de calidad','chart']]],
+ ['GESTIÓN',[['ingenieria','Ingeniería flexográfica','grid'],['inventario','Inventario de tintas','box'],['preparados','Colores preparados','palette'],['anilox','Inventario de anilox','grid'],['historial','Historial y reportes','history'],['calidad','Control de calidad','chart']]],
  ['RECURSOS',[['academia','Academia','book'],['componentes','Biblioteca técnica','file'],['calculadoras','Calculadoras','calc']]]
 ];
 const views=Object.fromEntries(navGroups.flatMap(([,items])=>items.map(([key,label,icon])=>[key,{label,icon}]))); views.usuarios={label:'Administración',icon:'grid'};
@@ -66,7 +68,7 @@ function render(){
  $('#workspace-label').textContent=full?'Espacio personal':'Acceso de comparación';
  $('#profile').innerHTML='<span class="avatar">'+esc(initials)+'</span><span><strong>'+esc(state.user?.name || 'Usuario invitado')+'</strong><small>'+esc(full?state.user.role:'Comparación')+'</small></span>'+I('chevron');
  $('#account').textContent=initials;
- const content={...lab.views,espectral:colorTools.spectralView,calidad:quality.view,preparados:prepared.view,inicio:dashboard,mediciones:measurements,correcciones:simulation,asistente:assistant,academia:academy,calculadoras:calculators,historial:reports,usuarios:users};
+ const content={...lab.views,espectral:colorTools.spectralView,calidad:quality.view,ingenieria:engineering.view,preparados:prepared.view,inicio:dashboard,mediciones:measurements,correcciones:simulation,asistente:assistant,academia:academy,calculadoras:calculators,historial:reports,usuarios:users};
  $('#main').innerHTML=(content[state.view] || (()=>collection(state.view)))();
  initializeTheme();
  if(state.view==='inicio') chart();
@@ -152,7 +154,7 @@ function collection(kind){
  const imported=['inventario','anilox'].includes(kind);
  return heading(views[kind].label,descriptions[kind],btn('Nuevo registro','data-new="'+kind+'"','plus','primary'))+
  (kind==='formulas'?'<div class="form-actions lab-actions">'+btn('Buscar una fórmula con mis tintas','data-view="igualacion"','spark')+'</div>':'')+
- (kind==='colores'?colorTools.libraryActions():'')+
+ (kind==='colores'?colorTools.libraryActions()+references.packs():'')+
  (imported&&inventory.canEdit()?'<div class="form-actions lab-actions">'+btn('Importar PDF','data-inventory-open="'+kind+'"','file')+'</div>':'')+
  '<section class="panel"><input class="filter" id="filter" type="search" aria-label="Filtrar registros" placeholder="Filtrar por nombre, referencia o estado…"><div class="table-scroll"><table class="table"><thead><tr><th>Nombre</th><th>Referencia</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>'+records.map(r=>'<tr data-filter="'+esc([r.title,r.status,Object.values(r.value).join(' ')].join(' ').toLowerCase())+'"><td><div style="display:flex;align-items:center;gap:9px">'+(kind==='colores'&&!r.value.color?'':swatch(r.value.color))+esc(r.title)+'</div></td><td>'+esc(r.value.target || r.value.code || r.value.lot || '—')+'</td><td>'+statusTag(r.status)+(kind==='inventario'&&r.value.quantity!=null&&r.value.quantity!==''?'<small class="inventory-stat">'+esc(r.value.quantity)+' kg</small>'+
  (r.value.minStock!==''&&r.value.minStock!=null&&Number(r.value.quantity)<=Number(r.value.minStock)?'<small class="inventory-alert">Stock mínimo</small>':''):'')+
@@ -425,6 +427,12 @@ document.addEventListener('click',async event=>{
    el.disabled=true;
    try{if(await lab.click(el))return;}finally{el.disabled=el.dataset.saved==='true';}
   }
+  if(Object.keys(d).some(key=>key.startsWith('eng'))){
+   el.disabled=true;try{await engineering.click(el);}finally{el.disabled=false;}return;
+  }
+  if(Object.keys(d).some(key=>key.startsWith('ref'))){
+   el.disabled=true;try{await references.click(el);}finally{el.disabled=false;}return;
+  }
   if(Object.keys(d).some(key=>key.startsWith('prepared'))){
    el.disabled=true;
    try{if(await prepared.click(el))return;}finally{el.disabled=false;}
@@ -464,7 +472,7 @@ document.addEventListener('click',async event=>{
    if(navigator.clipboard){await navigator.clipboard.writeText(field.value);toast('Código copiado');}
    return;
   }
-  if(d.logout!==undefined){await flushDraft();await api('logout',{});state.user=null;state.chat=[];state.records=[];dialog.close();history.replaceState(null,'',location.pathname);render();return;}
+  if(d.logout!==undefined){await flushDraft();await api('logout',{});references.clear();state.user=null;state.chat=[];state.records=[];dialog.close();history.replaceState(null,'',location.pathname);render();return;}
   if(d.scale!==undefined){const form=$('#editor'),result=$('.result',form);$('.error',form).textContent='';result.innerHTML=recipe(formData(form));result.hidden=false;return;}
   if(d.saveMeasure!==undefined){const v=measure($('#measure'));if(v)await save({kind:'mediciones',title:v.title?.trim()||'Comparación de color',value:v,status:'Registrada'});return;}
   if(d.saveCorrection!==undefined){const v=simulate($('#simulate'));if(v)await save({kind:'correcciones',title:v.title,value:v,status:'Registrada'});return;}
@@ -496,6 +504,11 @@ document.addEventListener('submit',async event=>{
  const form=event.target;event.preventDefault();const data=formData(form), error=$('.error',form);
  if(error)error.textContent='';
  try{
+  if(form.dataset.engForm||form.dataset.refForm){
+   const button=event.submitter;if(button)button.disabled=true;
+   try{await (form.dataset.engForm?engineering:references).submit(form);}finally{if(button)button.disabled=false;}
+   return;
+  }
   if(form.dataset.prepared){
    if(form.dataset.prepared==='scale'){prepared.scaled(form);return;}
    const button=event.submitter;if(button)button.disabled=true;
@@ -621,11 +634,13 @@ document.addEventListener('input',event=>{
  }
  if(el.id==='hue')$('#hue-result').textContent=el.value+'° · Complementario '+((Number(el.value)+180)%360)+'°';
 });
-document.addEventListener('change',event=>{lab.change(event.target);if(event.target.form?.id==='measure'&&['pFormat','mFormat'].includes(event.target.name))toggleMeasurementFormat(event.target);if(event.target.id==='chart-days'){state.chartDays=Number(event.target.value);render();$('#chart-days').focus();}});
+document.addEventListener('change',event=>{lab.change(event.target);engineering.change(event.target);if(event.target.form?.id==='measure'&&['pFormat','mFormat'].includes(event.target.name))toggleMeasurementFormat(event.target);if(event.target.id==='chart-days'){state.chartDays=Number(event.target.value);render();$('#chart-days').focus();}});
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();search();}});
 dialog.addEventListener('close',flushDraft);
 window.addEventListener('popstate',()=>navigate(views[location.hash.slice(1)]?location.hash.slice(1):'inicio'));
 const inventory=createInventory({state,esc,field,btn,modal,api,refresh,render,toast});
+const engineering=createEngineering({state,esc,field,heading,btn,modal,api,refresh,render,toast,download});
+const references=createReferenceLibrary({state,esc,field,btn,modal,api,refresh,render,toast});
 const prepared=createPrepared({state,field,esc,heading,btn,modal,api,refresh,render,toast,delta:(a,b)=>differences(a,b).e[0],recipe});
 const quality=createQuality({state,esc,field,heading,btn,modal,api,refresh,render,toast,download});
 const colorTools=createColorTools({state,esc,field,heading,btn,modal,api,refresh,render,toast,delta:(a,b)=>differences(a,b).e[0],labColor});
