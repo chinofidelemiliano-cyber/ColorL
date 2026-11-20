@@ -1,3 +1,4 @@
+import {comparisonInspector} from './color-space.js';
 import {createAcademy} from './academy.js';
 import {parseInstrumentCsv} from './instrument-import.js';
 import {createEngineering} from './engineering.js';
@@ -37,7 +38,7 @@ function toast(message){$('#toast').textContent=message;clearTimeout(toastTimer)
 async function api(path,data) {
  const response=await fetch('/api/'+path, data===undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
  const result=await response.json().catch(()=>null);
- if(!response.ok || !result)throw new Error(result?.error||'El servidor de ColorL no respondió correctamente. Intenta de nuevo.');
+ if(!response.ok || !result)throw new Error(result?.error||'El servidor de KCYM 4C no respondió correctamente. Intenta de nuevo.');
 
  return result;
 }
@@ -93,7 +94,7 @@ function dashboard(){
  ['sliders','orange','correcciones',signed?formulas.filter(r=>r.status==='En revisión').length:'5','Igualaciones pendientes','En seguimiento'],
  ['chart','purple','mediciones',signed?mean:'1.24','ΔE promedio',signed?'Mediciones ΔE 2000':'↓ 0.18 vs. periodo anterior']
  ];
- return '<section class="hero"><img class="hero-img" src="/hero.png" alt=""><div class="hero-content"><span class="hero-label">'+I('spark')+' LABORATORIO DE COLOR</span><h1>La ciencia <span>del color.</span></h1><p>Formula, mide y perfecciona tintas flexográficas en un solo espacio de trabajo.</p><div class="hero-actions">'+btn('Nueva fórmula','data-new="formulas"','flask','primary')+btn('Explorar biblioteca','data-view="colores"','palette')+'</div></div><span class="hero-caption">COLORIMETRÍA · FLEXOGRAFÍA</span></section>'+
+ return '<section class="hero"><div class="hero-depth" aria-hidden="true"><i></i><i></i><i></i></div><img class="hero-img" src="/hero.png" alt=""><div class="hero-content"><span class="hero-label">'+I('spark')+' LABORATORIO DE COLOR</span><h1>La ciencia <span>del color.</span></h1><p>Formula, mide y perfecciona tintas flexográficas en un solo espacio de trabajo.</p><div class="hero-actions">'+btn('Nueva fórmula','data-view="igualacion"','flask','primary')+btn('Explorar biblioteca','data-view="colores"','palette')+'</div></div><span class="hero-caption">COLORIMETRÍA · FLEXOGRAFÍA</span></section>'+
  '<div class="section-head"><div><h2>Resumen del laboratorio</h2><p>'+ (signed?'Actividad y calidad de tu espacio de trabajo.':'Actividad y calidad de un espacio de demostración.')+'</p></div><span class="tag">'+(signed?'Espacio personal':'Datos de ejemplo')+'</span></div>'+
  '<div class="metrics">'+cards.map(([icon,tint,view,value,label,sub])=>'<button class="metric" data-view="'+view+'"><div class="metric-top"><span class="metric-icon '+tint+'">'+I(icon)+'</span>'+I('out')+'</div><strong>'+value+'</strong><span class="metric-label">'+label+'</span><small>'+sub+'</small></button>').join('')+'</div>'+
  '<div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><h2>Rendimiento colorimétrico</h2><p class="panel-sub">Evolución de ΔE 2000</p></div><select id="chart-days" aria-label="Periodo del gráfico" style="width:auto;padding:5px"><option value="7">7 días</option><option value="30" '+(state.chartDays===30?'selected':'')+'>30 días</option></select></div><div class="chart-area"><canvas id="quality-chart" aria-label="Gráfico de diferencias Delta E" role="img" tabindex="0"></canvas><span class="chart-tip" hidden></span></div><div class="legend"><span>ΔE medido</span><span>Tolerancia '+(signed?'por registro':'de ejemplo')+'</span></div></section><section class="panel"><div class="panel-head"><div><h2>Fórmulas recientes</h2><p class="panel-sub">Última actividad</p></div>'+btn('Ver todas','data-view="formulas"','chevron','text-button')+'</div>'+(formulas.slice(0,3).map(recordRow).join('') || '<p class="empty">Aún no hay fórmulas.</p>')+'</section></div>'+
@@ -278,7 +279,7 @@ function toggleMeasurementFormat(select){
 function measurementRow(record){
  const label=record.value.work?record.value.work+' · '+record.value.target:record.value.target;
  return '<div class="record-row"><div><strong>'+esc(record.title)+'</strong><small>'+esc(label||record.status)+'</small></div>'+
-  btn('Ver evolución','data-measure-trend='+record.id,'chart','text-button')+'</div>';
+  btn('Ver análisis y evolución','data-measure-trend='+record.id,'chart','text-button')+'</div>';
 }
 function measureTrend(record){
  const {value:v}=record;
@@ -292,7 +293,13 @@ function measureTrend(record){
  const plot=samples.length>1?'<figure class="lab-spectrum"><svg viewBox="0 0 490 125" role="img" aria-label="ΔE y tolerancia por intento"><path d="M28 20V103H470" stroke="currentColor" fill="none"/><polyline points="'+line('tolerance')+'" fill="none" stroke="var(--pink)" stroke-dasharray="4 3"/><polyline points="'+line('delta')+'" fill="none" stroke="var(--cyan)" stroke-width="2"/></svg><figcaption>ΔE medido · tolerancia por lectura</figcaption></figure>':'<p class="notice">Guarda otra medición con el mismo trabajo, patrón, método y condición para ver la evolución.</p>';
  const rows=samples.map((r,i)=>'<div class="record-row"><div><strong>'+esc(String(i+1)+'. '+r.title)+'</strong><small>'+esc(new Date(r.updated).toLocaleString('es-MX'))+'</small></div>'+
   '<span>'+esc(r.value.method)+' '+r.value.delta.toFixed(2)+'</span></div>').join('');
- modal(v.work||record.title,plot+rows);
+ modal(v.work||record.title,plot+rows,true);
+ if(Array.isArray(v.pattern)&&v.pattern.length===3&&v.pattern.every(Number.isFinite)&&
+    Array.isArray(v.sample)&&v.sample.length===3&&v.sample.every(Number.isFinite)){
+  const inspector=comparisonInspector(v.pattern,v.sample,differences(v.pattern,v.sample),v.delta<=Number(v.tolerance),
+   [displayLab(v.pattern,v.illuminant),displayLab(v.sample,v.illuminant)]);
+  modalBody.querySelector('.dialog-title').after(inspector);
+ }
 }
 function labColor([l,a,b]){
  const fy=(l+16)/116, f=x=>x>6/29?x**3:3*(6/29)**2*(x-4/29), x=.95047*f(fy+a/500), y=f(fy), z=1.08883*f(fy-b/200);
@@ -322,6 +329,7 @@ function measure(form){
  '<p>CIELCh del patrón '+[p[0],d.c1,d.h1].map(n=>n.toFixed(2)).join(', ')+' · muestra '+[m[0],d.c2,d.h2].map(n=>n.toFixed(2)).join(', ')+'</p>'+
  (optics.densityDifference==null?'':'<p>Diferencia de densidad '+signed(optics.densityDifference)+'</p>')+
  (optics.spectralRms==null?(optics.pattern.length&&optics.sample.length?'<p>Las curvas usan mallas distintas. El RMS requiere las mismas longitudes de onda.</p>':''):'<p>Error espectral RMS '+optics.spectralRms.toFixed(3)+' puntos de reflectancia.</p>');
+ result.firstElementChild.after(comparisonInspector(p,m,d,delta<=tolerance,previews));
  const {pProfile,pIccLab,mProfile,mIccLab,pValues,mValues,...metadata}=v;
  return {...metadata,delta,tolerance,color:previews[1]?.hex||'',target:v.method+' · '+delta.toFixed(2),pattern:p,sample:m,readings:{pattern,sample},optics};
 }
@@ -384,7 +392,7 @@ function auth(mode='login'){
    (state.user.role!=='administrador'?btn('Activar código de acceso','data-access'):'')+btn('Cerrar sesión','data-logout')+'</div><p class="error"></p></form>');
  }
  const title={login:'Iniciar sesión',register:'Crear cuenta',recover:'Recuperar contraseña',reset:'Cambiar contraseña'}[mode];
- $('#access-gate').innerHTML='<section class="access-card panel"><div class="brand access-brand"><span class="brand-icon"><i></i></span><span><strong>Color<span class="accent">L</span></strong><small>LABORATORIO DIGITAL</small></span></div><h1>'+title+'</h1><form id="auth-form" data-mode="'+mode+'"><div class="form-grid">'+
+ $('#access-gate').innerHTML='<section class="access-card panel"><div class="brand access-brand"><span class="brand-icon"><i></i></span><span><strong>KCYM <span class="accent">4C</span></strong><small>LABORATORIO DIGITAL</small></span></div><h1>'+title+'</h1><form id="auth-form" data-mode="'+mode+'"><div class="form-grid">'+
   (mode==='register'?field('name','Nombre','text','',true):'')+(mode!=='reset'?field('email','Correo electrónico','email','',true):field('key','Código recibido','text','',true))+
   (mode!=='recover'?field('password','Contraseña (mínimo 10 caracteres)','password','',true):'')+
   (mode==='register'?field('invite','Código de acceso al laboratorio (opcional)','password')+'</div><p class="notice">Puedes crear una cuenta sin código para comparar colores. Una invitación activa las herramientas del laboratorio.</p>':'</div>')+
@@ -418,7 +426,7 @@ async function save(record, view){
 }
 function search(){
  if(!state.user?.fullAccess)return;
- modal('Buscar en ColorL','<input id="global-query" type="search" placeholder="Colores, fórmulas, mediciones o módulos…" aria-label="Buscar"><div id="global-results"></div>');
+ modal('Buscar en KCYM 4C','<input id="global-query" type="search" placeholder="Colores, fórmulas, mediciones o módulos…" aria-label="Buscar"><div id="global-results"></div>');
  $('#global-query').focus();searchResults('');
 }
 function searchResults(term){
@@ -438,7 +446,7 @@ async function exportRecords(type){
  const lines=[['Tipo','Nombre','Estado','Actualización','Datos'],...data.records.map(r=>[r.kind,r.title,r.status,r.updated,JSON.stringify(r.value)])].map(row=>row.map(csv).join(','));
  download('colorl-registros.csv','\ufeff'+lines.join('\r\n'),'text/csv;charset=utf-8');
 }
-$('#workspace-icon').innerHTML=I('flask');$('#menu').innerHTML=I('menu');$('#notification').innerHTML=I('bell');$('#search').innerHTML=I('search')+'<span>Buscar en ColorL…</span><kbd>Ctrl K</kbd>';
+$('#workspace-icon').innerHTML=I('flask');$('#menu').innerHTML=I('menu');$('#notification').innerHTML=I('bell');$('#search').innerHTML=I('search')+'<span>Buscar en KCYM 4C…</span><kbd>Ctrl K</kbd>';
 document.addEventListener('click',async event=>{
  const el=event.target.closest('button');if(!el)return;
  try{
@@ -496,7 +504,20 @@ document.addEventListener('click',async event=>{
   }
   if(d.logout!==undefined){await flushDraft();await api('logout',{});references.clear();state.user=null;state.chat=[];state.records=[];dialog.close();history.replaceState(null,'',location.pathname);render();return;}
   if(d.scale!==undefined){const form=$('#editor'),result=$('.result',form);$('.error',form).textContent='';result.innerHTML=recipe(formData(form));result.hidden=false;return;}
-  if(d.saveMeasure!==undefined){const v=measure($('#measure'));if(v)await save({kind:'mediciones',title:v.title?.trim()||'Comparación de color',value:v,status:'Registrada'});return;}
+  if(d.saveMeasure!==undefined){
+   const form=$('#measure'),v=measure(form);
+   if(!v)return;
+   el.disabled=true;
+   try{
+    const saved=await api('records',{kind:'mediciones',title:v.title?.trim()||'Comparación de color',value:v,status:'Registrada'});
+    await refresh();
+    const record=byKind('mediciones').find(row=>row.id===saved.id);
+    render();
+    if(record&&state.view==='mediciones')measureTrend(record);
+    toast('Medición guardada');
+   }finally{el.disabled=false;}
+   return;
+  }
   if(d.saveCorrection!==undefined){const v=simulate($('#simulate'));if(v)await save({kind:'correcciones',title:v.title,value:v,status:'Registrada'});return;}
   if(d.export)return await exportRecords(d.export);
   if(d.print!==undefined)return print();

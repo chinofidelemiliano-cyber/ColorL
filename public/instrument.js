@@ -61,7 +61,7 @@ export function instrumentReading({format,text,profile,iccLab,condition}){
  }else if(format==='CMYK'){
   values=numberList(text,4);
   if(values.some(value=>value<0||value>100))throw new Error('Los canales CMYK deben estar entre 0 y 100 %.');
-  if(!String(profile||'').trim()||!String(iccLab||'').trim())throw new Error('Para comparar CMYK indica el perfil ICC y el CIELAB que produjo tu conversión. ColorL conserva ambos.');
+  if(!String(profile||'').trim()||!String(iccLab||'').trim())throw new Error('Para comparar CMYK indica el perfil ICC y el CIELAB que produjo tu conversión. KCYM 4C conserva ambos.');
   lab=parseLab(iccLab);
  }else throw new Error('Formato de medición desconocido.');
  if(lab.some(v=>!Number.isFinite(v))||lab[0]<-.0001||lab[0]>100.0001||lab.slice(1).some(v=>Math.abs(v)>200))

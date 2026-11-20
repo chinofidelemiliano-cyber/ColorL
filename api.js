@@ -521,7 +521,7 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
  } catch (error) {
   if (/no such table|no such column/i.test(String(error.message))){
    console.error('Falta aplicar una migración en D1');
-   return fail(503,'La base de datos de ColorL necesita una migración. Vuelve a desplegar aplicando las migraciones D1.');
+   return fail(503,'La base de datos de KCYM 4C necesita una migración. Vuelve a desplegar aplicando las migraciones D1.');
   }
   if (String(error.message).includes('records_active_ink_code'))return fail(409,'Ya existe una tinta activa con ese código.');
   if (error.code==='ENOENT') return fail(404,'Archivo no disponible');
@@ -529,7 +529,7 @@ export async function handleApi(req,{query,batch,config,secure,allowAuth,verifyL
   if(iterationLimit(error)&&phase==='password-verification')
    return fail(503,'Este servidor no admite el formato de tu contraseña anterior. Contacta al administrador para restablecerla.');
   const reference=crypto.randomUUID().slice(0,8);
-  console.error('ColorL '+path+' '+phase+' '+reference, error.name, error.code||'');
+  console.error('KCYM 4C '+path+' '+phase+' '+reference, error.name, error.code||'');
   return fail(500,'No se pudo completar la operación. Referencia: '+reference);
  }
 }
