@@ -94,7 +94,7 @@ function dashboard(){
  ['sliders','orange','correcciones',signed?formulas.filter(r=>r.status==='En revisión').length:'5','Igualaciones pendientes','En seguimiento'],
  ['chart','purple','mediciones',signed?mean:'1.24','ΔE promedio',signed?'Mediciones ΔE 2000':'↓ 0.18 vs. periodo anterior']
  ];
- return '<section class="hero"><div class="hero-depth" aria-hidden="true"><i></i><i></i><i></i></div><img class="hero-img" src="/hero.png" alt=""><div class="hero-content"><span class="hero-label">'+I('spark')+' LABORATORIO DE COLOR</span><h1>La ciencia <span>del color.</span></h1><p>Formula, mide y perfecciona tintas flexográficas en un solo espacio de trabajo.</p><div class="hero-actions">'+btn('Nueva fórmula','data-view="igualacion"','flask','primary')+btn('Explorar biblioteca','data-view="colores"','palette')+'</div></div><span class="hero-caption">COLORIMETRÍA · FLEXOGRAFÍA</span></section>'+
+ return '<section class="hero"><div class="hero-depth" aria-hidden="true"><i></i><i></i><i></i></div><img class="hero-img" src="/render-prensa.webp" alt="" fetchpriority="high"><div class="hero-content"><span class="hero-label">'+I('spark')+' LABORATORIO DE COLOR</span><h1>La ciencia <span>del color.</span></h1><p>Formula, mide y perfecciona tintas flexográficas en un solo espacio de trabajo.</p><div class="hero-actions">'+btn('Nueva fórmula','data-view="igualacion"','flask','primary')+btn('Explorar biblioteca','data-view="colores"','palette')+'</div></div><span class="hero-caption">COLORIMETRÍA · FLEXOGRAFÍA</span></section>'+
  '<div class="section-head"><div><h2>Resumen del laboratorio</h2><p>'+ (signed?'Actividad y calidad de tu espacio de trabajo.':'Actividad y calidad de un espacio de demostración.')+'</p></div><span class="tag">'+(signed?'Espacio personal':'Datos de ejemplo')+'</span></div>'+
  '<div class="metrics">'+cards.map(([icon,tint,view,value,label,sub])=>'<button class="metric" data-view="'+view+'"><div class="metric-top"><span class="metric-icon '+tint+'">'+I(icon)+'</span>'+I('out')+'</div><strong>'+value+'</strong><span class="metric-label">'+label+'</span><small>'+sub+'</small></button>').join('')+'</div>'+
  '<div class="dashboard-grid"><section class="panel"><div class="panel-head"><div><h2>Rendimiento colorimétrico</h2><p class="panel-sub">Evolución de ΔE 2000</p></div><select id="chart-days" aria-label="Periodo del gráfico" style="width:auto;padding:5px"><option value="7">7 días</option><option value="30" '+(state.chartDays===30?'selected':'')+'>30 días</option></select></div><div class="chart-area"><canvas id="quality-chart" aria-label="Gráfico de diferencias Delta E" role="img" tabindex="0"></canvas><span class="chart-tip" hidden></span></div><div class="legend"><span>ΔE medido</span><span>Tolerancia '+(signed?'por registro':'de ejemplo')+'</span></div></section><section class="panel"><div class="panel-head"><div><h2>Fórmulas recientes</h2><p class="panel-sub">Última actividad</p></div>'+btn('Ver todas','data-view="formulas"','chevron','text-button')+'</div>'+(formulas.slice(0,3).map(recordRow).join('') || '<p class="empty">Aún no hay fórmulas.</p>')+'</section></div>'+
@@ -218,7 +218,9 @@ async function editor(kind,r,copy=false){
 }
 const labFields=(prefix,values=[])=>['L*','a*','b*'].map((label,i)=>field(prefix+i,label,'number',values[i],true)).join('');
 function measurementFields(prefix,full){
- const core='<div class="form-grid">'+labFields(prefix)+'</div>';
+ const controls=labFields(prefix).replace('name="'+prefix+'0"', 'name="'+prefix+'0" data-lightness aria-describedby="lightness-'+prefix+'"')
+  .replace('</label>','<small class="field-error" id="lightness-'+prefix+'" aria-live="polite"></small></label>');
+ const core='<div class="form-grid measure-channels">'+controls+'</div>';
  if(!full)return core;
  return '<div class="form-grid">'+field(prefix+'Format','Formato',['CIELAB','CIELCh','XYZ','sRGB','CMYK'])+'</div>'+
   '<div data-measure-fields="'+prefix+'Lab">'+core+'</div>'+
@@ -228,10 +230,11 @@ function measurementFields(prefix,full){
 }
 function measurements(){
  const full=state.user.fullAccess;
- return heading(full?'Colorimetría':'Comparar colores',full?'Compara lecturas, interpreta desviaciones y conserva los datos del instrumento.':'Ingresa los valores CIELAB del patrón y de la muestra.',full?btn('Importar lecturas CSV','data-measure-import','file'):btn('Activar acceso completo','data-access','spark'))+
- '<form id="measure" class="panel"><div class="form-grid">'+(full?field('title','Nombre de la medición')+field('work','Trabajo o referencia de seguimiento'):'')+
- '<div><h3>Patrón</h3>'+measurementFields('p',full)+'</div><div><h3>Muestra</h3>'+measurementFields('m',full)+'</div>'+
- field('tolerance','Tolerancia ΔE','number',2,true)+field('condition','Condición de medición',['M0','M1','M2','M3'])+
+ const importAction=full?btn('Importar lecturas CSV','data-measure-import','file'):btn('Activar acceso completo','data-access','spark');
+ return '<section class="measure-masthead"><div class="measure-masthead-copy"><h1>Comparar colores</h1><p>Compara el patrón y la muestra, explora su posición en CIELAB y revisa el ajuste recomendado.</p>'+importAction+'</div></section>'+
+ '<form id="measure" class="panel measure-workbench"><div class="form-grid">'+(full?field('title','Nombre de la medición')+field('work','Trabajo o referencia de seguimiento'):'')+
+ '<section class="reading-card reading-standard"><h3>Patrón</h3>'+measurementFields('p',full)+'</section><section class="reading-card reading-sample"><h3>Muestra</h3>'+measurementFields('m',full)+'</section>'+
+ '<p class="wide measure-range">En CIELAB, L* va de 0 (negro) a 100 (blanco). a* y b* sí pueden ser negativos.</p>'+ field('tolerance','Tolerancia ΔE','number',2,true)+field('condition','Condición de medición',['M0','M1','M2','M3'])+
  field('illuminant','Iluminante / observador','text','D50 / 2°',true)+field('method','Método',['ΔE 2000','ΔE 76','ΔE 94 (artes gráficas)','CMC (2:1)'])+
  field('geometry','Geometría (por ejemplo 45°/0°)')+field('backing','Fondo de medición')+
  '<details class="wide"><summary>Cómo elegir las condiciones</summary><p class="notice">Usa el iluminante, observador, geometría y fondo de tu especificación o patrón. M0 corresponde a una condición histórica de medición; M1 busca condiciones de iluminación compatibles con D50 y su UV; M2 reduce la contribución UV; M3 usa polarización en una condición con UV reducido. Confirma el modo que realmente utilizó tu instrumento. Cambiar el observador o la luz de referencia cambia la interpretación del color.</p></details>'+
@@ -306,7 +309,19 @@ function labColor([l,a,b]){
  return '#'+[3.2406*x-1.5372*y-.4986*z,-.9689*x+1.8758*y+.0415*z,.0557*x-.204*y+1.057*z].map(c=>Math.round(255*Math.min(1,Math.max(0,c<=.0031308?12.92*c:1.055*c**(1/2.4)-.055))).toString(16).padStart(2,'0')).join('');
 }
 const formData=f=>Object.fromEntries(new FormData(f));
+function lightnessError(input){
+ const message=input.value!==''&&(input.valueAsNumber<0||input.valueAsNumber>100)?
+  (input.name==='p0'?'Patrón':'Muestra')+' · L*: '+input.value+' está fuera de rango. Revisa la lectura del instrumento. L* debe estar entre 0 y 100.':'';
+ const feedback=input.parentElement.querySelector('.field-error');
+ feedback.textContent=message;
+ input.setAttribute('aria-invalid',String(Boolean(message)));
+ return message;
+}
 function measure(form){
+ $('.error',form).textContent='';
+ $('.result',form).hidden=true;
+ const invalid=[...form.querySelectorAll('[data-lightness]:not(:disabled)')].filter(input=>lightnessError(input));
+ if(invalid.length){invalid[0].focus();return;}
  if(!form.reportValidity())return;
  const v=formData(form),mode=prefix=>v[prefix+'Format']||'CIELAB';
  const reading=prefix=>instrumentReading({format:mode(prefix),text:mode(prefix)==='CIELAB'?[0,1,2].map(i=>v[prefix+i]).join(', '):v[prefix+'Values'],
@@ -664,6 +679,7 @@ document.addEventListener('submit',async event=>{
 document.addEventListener('input',event=>{
  const el=event.target;
  lab.input(el);
+ if(el.matches('#measure [data-lightness]'))lightnessError(el);
  const form=el.closest('#editor'), indicator=form && $('#draft-status',form);
  if(indicator){
   const content=formData(form);
