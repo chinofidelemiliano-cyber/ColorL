@@ -15,10 +15,36 @@ export function correctionSteps({dl,da,db},accepted){
   .map(([value,positive,negative,axis])=>(value<0?positive:negative)+' ('+axis+' '+signed(-value)+' respecto a la muestra).');
 }
 
+export function workshopPlan({dl,da,db,dc},accepted){
+ if(accepted)return [];
+ const plan=[];
+ if(Math.abs(dl)>=.005){
+  const darker=dl>0;
+  plan.push({
+   title:darker?'Para bajar la luminosidad':'Para subir la luminosidad',
+   action:darker
+    ?(dc<-.005?'Verifica primero si la película impresa quedó demasiado delgada o si la receta tiene exceso de base. Con el aporte correcto, ensaya una versión más concentrada usando la misma mezcla de colorantes.':'Verifica el aporte y la cantidad de base. Con el proceso estable, ensaya más concentrado del mismo tono y comprueba que el croma no se aleje del objetivo.')
+    :'Si el sustrato es más claro que la tinta y la mezcla es transparente, ensaya una base transparente compatible para que aparezca más el fondo. Si necesitas conservar la opacidad, ensaya una base blanca compatible y revisa cuánto croma pierdes.',
+   check:'Mide L* después de secar o curar la prueba. Revisa también a*, b* y el croma antes de dar por bueno el ajuste.'
+  });
+ }
+ if(Math.abs(da)>=.005||Math.abs(db)>=.005){
+  const colors=[...(Math.abs(da)>=.005?[da<0?'rojo':'verde']:[]),...(Math.abs(db)>=.005?[db<0?'amarillo':'azul']:[])];
+  const warm=colors.join('/')==='rojo/amarillo';
+  plan.push({
+   title:'Para corregir el tono',
+   action:warm?'Prueba un concentrado rojo cálido compatible en una porción aparte: puede mover ambos ejes hacia el rojo y el amarillo. Si el rojo ya se acerca y aún falta amarillo, prueba ese ajuste en otra porción.':
+    'Busca en tu sistema de tintas un concentrado compatible que mueva la prueba hacia '+colors.join(' y ')+'. Si necesitas dos colorantes, pruébalos por separado para ver qué cambia cada uno.',
+   check:'Contrasta a* y b* con el patrón. Vuelve a medir L* y ΔE porque un ajuste de tono también puede cambiar la luminosidad.'
+  });
+ }
+ return plan;
+}
+
 export function comparisonInspector(pattern,sample,d,accepted,swatches){
  const swatch=(index,color)=>swatches[index]?.hex||color;
  const labels=[['Patrón',pattern,d.c1,d.h1,'#51e7dd'],['Muestra',sample,d.c2,d.h2,'#ff7bc1']];
- const motion=correctionSteps(d,accepted);
+ const motion=correctionSteps(d,accepted), plan=workshopPlan(d,accepted);
  const host=document.createElement('div');
  host.className='color-inspector';
  host.innerHTML='<section class="color-scene"><h3>Espacio CIELAB</h3>'+
@@ -31,8 +57,10 @@ export function comparisonInspector(pattern,sample,d,accepted,swatches){
   '<div><strong>'+name+'</strong><p>L* '+lab[0].toFixed(2)+' · a* '+signed(lab[1])+' · b* '+signed(lab[2])+'</p>'+
   '<small>C* '+c.toFixed(2)+' · '+(c<.005?'tono neutro':hueName(h)+' · h° '+h.toFixed(1)+'°')+'</small></div></article>').join('')+
   '<h3>Qué ajustar</h3><ol>'+motion.map(step=>'<li>'+step+'</li>').join('')+'</ol>'+
-  (accepted?'':'<p>'+ (d.dc<-.005?'La muestra tiene menos croma. Busca recuperar intensidad. ':d.dc>.005?'La muestra tiene más croma. Busca moderar la intensidad. ':'')+
-  'Comprueba primero el sustrato, recubrimiento y aporte de tinta. Mide una prueba en las mismas condiciones. Para estimar gramos se necesitan ensayos de tus tintas con esa mezcla y esas condiciones.</p>')+
+  (plan.length?'<h3>Cómo ajustarlo en taller</h3><p>Antes de cambiar la receta, compara material, fondo, recubrimiento y aporte con la prueba aprobada.</p>'+
+   '<ul class="workshop-plan">'+plan.map(({title,action,check})=>'<li><strong>'+title+'</strong><p>'+action+'</p><p><strong>Comprueba:</strong> '+check+'</p></li>').join('')+'</ul>'+
+   '<p>Usa porciones pesadas, separadas de la tinta de producción. Cambia una variable por prueba, registra los gramos y repite la medición en las mismas condiciones. Escala únicamente después de confirmar que el ΔE baja y que la prueba cumple tu tolerancia.</p>'+
+   '<p>Para recomendar gramos de una tinta específica hacen falta ensayos comparables de esa mezcla.</p>':'')+
   '</section>';
 
  const svg=host.querySelector('svg');
