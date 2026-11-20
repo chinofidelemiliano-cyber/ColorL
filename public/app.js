@@ -24,7 +24,8 @@ const swatch = color => '<div class="swatch" style="--ink:'+shade(color)+'"></di
 const btn = (label,attrs='',icon='',kind='secondary') => '<button type="button" class="'+kind+'" '+attrs+'>'+ (icon ? I(icon) : '')+esc(label)+'</button>';
 const navGroups = [
  ['GENERAL',[['inicio','Panel de inicio','home']]],
- ['LABORATORIO',[['formulas','Formulación','flask'],['igualacion','Igualación inteligente','spark'],['tintas','Catálogo de tintas','drop'],['caracterizaciones','Caracterización','sliders'],['espectral','Predicción espectral','chart'],['colores','Biblioteca de colores','palette'],['mediciones','Colorimetría','chart'],['correcciones','Simulador y corrección','sliders'],['asistente','Asistente técnico','spark']]],
+ ['COLOR E IGUALACIÓN',[['igualacion','Nueva fórmula de Pantone','flask'],['formulas','Fórmulas guardadas','flask'],['colores','Biblioteca de colores','palette'],['mediciones','Comparar colores','chart'],['correcciones','Historial y simulación','sliders']]],
+ ['DATOS DEL LABORATORIO',[['tintas','Catálogo de tintas','drop'],['caracterizaciones','Caracterización','sliders'],['espectral','Predicción espectral','chart'],['asistente','Asistente técnico','spark']]],
  ['GESTIÓN',[['ingenieria','Ingeniería flexográfica','grid'],['inventario','Inventario de tintas','box'],['preparados','Colores preparados','palette'],['anilox','Inventario de anilox','grid'],['historial','Historial y reportes','history'],['calidad','Control de calidad','chart']]],
  ['RECURSOS',[['academia','Academia','book'],['componentes','Biblioteca técnica','file'],['calculadoras','Calculadoras','calc']]]
 ];
@@ -556,7 +557,7 @@ document.addEventListener('submit',async event=>{
   if(form.dataset.lab){
    const button=event.submitter;
    if(button)button.disabled=true;
-   try{await lab.submit(form);}finally{if(button)button.disabled=false;}
+   try{await lab.submit(form,event.submitter);}finally{if(button)button.disabled=false;}
    return;
   }
   switch(form.id){
@@ -637,6 +638,7 @@ document.addEventListener('submit',async event=>{
 });
 document.addEventListener('input',event=>{
  const el=event.target;
+ lab.input(el);
  const form=el.closest('#editor'), indicator=form && $('#draft-status',form);
  if(indicator){
   const content=formData(form);
@@ -655,7 +657,7 @@ document.addEventListener('input',event=>{
  }
  if(el.id==='hue')$('#hue-result').textContent=el.value+'° · Complementario '+((Number(el.value)+180)%360)+'°';
 });
-document.addEventListener('change',event=>{lab.change(event.target);engineering.change(event.target);quality.change(event.target);if(event.target.form?.id==='measure'&&['pFormat','mFormat'].includes(event.target.name))toggleMeasurementFormat(event.target);if(event.target.id==='chart-days'){state.chartDays=Number(event.target.value);render();$('#chart-days').focus();}});
+document.addEventListener('change',event=>{lab.change(event.target);lab.input(event.target);engineering.change(event.target);quality.change(event.target);if(event.target.form?.id==='measure'&&['pFormat','mFormat'].includes(event.target.name))toggleMeasurementFormat(event.target);if(event.target.id==='chart-days'){state.chartDays=Number(event.target.value);render();$('#chart-days').focus();}});
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();search();}});
 dialog.addEventListener('close',flushDraft);
 window.addEventListener('popstate',()=>navigate(views[location.hash.slice(1)]?location.hash.slice(1):'inicio'));

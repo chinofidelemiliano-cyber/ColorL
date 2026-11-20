@@ -27,3 +27,10 @@ dialog.wide-dialog{width:min(1050px,calc(100% - 24px))}.inventory-review{max-hei
 .digital-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px}.digital-tile{display:grid;gap:7px;text-align:left;min-height:68px;border:1px solid var(--line);border-radius:8px;padding:7px;background:var(--surface);font-size:.84rem}.digital-tile::before{content:'';height:32px;border-radius:5px;background:var(--ink);border:1px solid var(--line)}.reference-image{max-width:100%;max-height:140px;border:1px solid var(--line);border-radius:8px}.eng-cylinder{width:132px;height:132px;margin-top:12px}.eng-cylinder text{font-size:10px}.eng-mount{width:min(100%,480px);height:auto}
 .order-choice{display:flex;align-items:center;gap:8px;margin:8px 0}.order-choice input{width:auto}
 .academy-progress progress{display:block;width:100%;margin-top:10px;accent-color:var(--cyan)}.academy-module{border-top:1px solid var(--line);margin-top:14px;padding-top:13px}.academy-module h4{margin:9px 0 0}.academy-flow{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.academy-flow span{padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--accentbg)}.academy-flow span:not(:last-child)::after{content:' →';color:var(--cyan)}.academy-quiz{border-top:1px solid var(--line);padding-top:10px;margin-top:12px}
+
+.pantone-workflow > h2:not(:first-child) { margin-top: 1.6rem; }
+.pantone-preview { display: grid; grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr); align-items: center; gap: 1rem; margin-block: 1rem; }
+.pantone-wheel { position: relative; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, #777 0%, transparent 70%), conic-gradient(from 90deg, #f03, #9238ff, #2582ff, #1db86a, #ffe535, #f03); }
+.pantone-wheel span { position: absolute; transform: translate(-50%, -50%); display: grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: 50%; border: 2px solid #fff; color: #fff; background: #111827; font-size: .75rem; font-weight: bold; }
+.pantone-wheel span + span { border-color: #72f4ea; }
+#lab-run-history li { margin-block: .6rem; }
