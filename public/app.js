@@ -33,6 +33,7 @@ const navGroups = [
 const views=Object.fromEntries(navGroups.flatMap(([,items])=>items.map(([key,label,icon])=>[key,{label,icon}]))); views.usuarios={label:'Administración',icon:'grid'};
 const state={user:null,view:'inicio',records:[],theme:localStorage.getItem('colorl-theme')==='light'?'light':'dark',chartDays:7,chat:[]};
 const dialog=$('#dialog'), modalBody=$('#dialog-body');
+const openNavGroups=new Map();
 let resizeChart, toastTimer, draftTimer, draftPending, draftWrite=Promise.resolve();
 function toast(message){$('#toast').textContent=message;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').textContent='',3500);}
 async function api(path,data) {
@@ -51,8 +52,14 @@ function navigate(view){
  if(!availableView(view))view=defaultView();
  state.view=view;
  if(location.hash!=='#'+view) history.pushState(null,'','#'+view);
- $('#sidebar').classList.remove('open');
+ const fromDrawer=$('#sidebar').classList.contains('open');
+ setMobileMenu(false);
  dialog.close();render();window.scrollTo(0,0);
+ if(fromDrawer){
+  const title=$('#main h1')||$('#main');
+  title.tabIndex=-1;
+  title.focus({preventScroll:true});
+ }
 }
 function render(){
  resizeChart?.disconnect();
@@ -67,7 +74,7 @@ function render(){
   state.user.role==='administrador' ? [...navGroups,['EQUIPO',[['usuarios','Administración','grid']]]] : navGroups;
  $('#search').hidden=!full;
  $('#notification').hidden=!full;
- $('#nav').innerHTML=groups.map(([name,items])=>'<span class="nav-heading">'+name+'</span>'+items.map(([key,label,icon])=>'<button class="nav-btn '+(key===state.view?'active':'')+'" '+(key===state.view?'aria-current="page"':'')+' data-view="'+key+'">'+I(icon)+label+'</button>').join('')).join('');
+ renderNav(groups);
  const initials=state.user?.name.split(/\s+/).slice(0,2).map(s=>s[0]).join('').toUpperCase() || 'CL';
  $('#workspace-label').textContent=full?'Espacio personal':'Acceso de comparación';
  $('#profile').innerHTML='<span class="avatar">'+esc(initials)+'</span><span><strong>'+esc(state.user?.name || 'Usuario invitado')+'</strong><small>'+esc(full?state.user.role:'Comparación')+'</small></span>'+I('chevron');
@@ -77,6 +84,38 @@ function render(){
  initializeTheme();
  if(state.view==='inicio') chart();
  if(state.view==='usuarios') loadUsers();
+}
+function renderNav(groups){
+ const navigation=$('#nav'),scroll=navigation.scrollTop;
+ const button=([key,label,icon])=>'<button class="nav-btn '+(key===state.view?'active':'')+'" '+
+  (key===state.view?'aria-current="page"':'')+' data-view="'+key+'">'+I(icon)+'<span>'+esc(label)+'</span></button>';
+ navigation.innerHTML=groups.map(([name,items],index)=>{
+  if(items.length===1)return '<div class="nav-standalone" data-nav-tone="'+index+'"><span class="nav-heading">'+esc(name)+'</span>'+button(items[0])+'</div>';
+  const current=items.find(([key])=>key===state.view);
+  const expanded=current||openNavGroups.get(name);
+  return '<details class="nav-cluster '+(current?'contains-active':'')+'" data-nav-tone="'+index+'" '+(expanded?'open':'')+'>'+
+   '<summary><span class="nav-group-icon">'+I(items[0][2])+'</span><span>'+esc(name)+'</span>'+I('chevron')+'</summary>'+
+   '<div class="nav-cluster-links">'+items.map(button).join('')+'</div></details>';
+ }).join('');
+ navigation.querySelectorAll('details').forEach(group=>group.addEventListener('toggle',()=>{
+  if(group.isConnected)openNavGroups.set(groups[Number(group.dataset.navTone)][0],group.open);
+ }));
+ navigation.scrollTop=scroll;
+ const active=navigation.querySelector('.nav-btn.active');
+ if(active){
+  const bounds=navigation.getBoundingClientRect(),row=active.getBoundingClientRect();
+  if(row.bottom>bounds.bottom)navigation.scrollTop+=row.bottom-bounds.bottom+8;
+  if(row.top<bounds.top)navigation.scrollTop-=bounds.top-row.top+8;
+ }
+}
+function setMobileMenu(open,restoreFocus=false){
+ const toggle=$('#menu');
+ $('#sidebar').classList.toggle('open',open);
+ $('#menu-scrim').hidden=!open;
+ toggle.setAttribute('aria-expanded',String(open));
+ toggle.setAttribute('aria-label',open?'Cerrar menú':'Abrir menú');
+ if(open)($('#nav [aria-current="page"]')||$('#nav button'))?.focus();
+ else if(restoreFocus)toggle.focus();
 }
 const statusTag=status=>'<span class="tag '+(['Aprobada','Compartida','Completada'].includes(status)?'good':status==='En revisión'?'pending':'')+'">'+esc(status)+'</span>';
 function recordRow(r){
@@ -517,7 +556,7 @@ document.addEventListener('click',async event=>{
    if(navigator.clipboard){await navigator.clipboard.writeText(field.value);toast('Código copiado');}
    return;
   }
-  if(d.logout!==undefined){await flushDraft();await api('logout',{});references.clear();state.user=null;state.chat=[];state.records=[];dialog.close();history.replaceState(null,'',location.pathname);render();return;}
+  if(d.logout!==undefined){await flushDraft();await api('logout',{});references.clear();state.user=null;state.chat=[];state.records=[];openNavGroups.clear();setMobileMenu(false);dialog.close();history.replaceState(null,'',location.pathname);render();return;}
   if(d.scale!==undefined){const form=$('#editor'),result=$('.result',form);$('.error',form).textContent='';result.innerHTML=recipe(formData(form));result.hidden=false;return;}
   if(d.saveMeasure!==undefined){
    const form=$('#measure'),v=measure(form);
@@ -543,7 +582,8 @@ document.addEventListener('click',async event=>{
   }
   if(el.id==='search')return search();
   if(['profile','account'].includes(el.id))return auth();
-  if(el.id==='menu'){const open=$('#sidebar').classList.toggle('open');el.setAttribute('aria-expanded',open);return;}
+  if(el.id==='menu'){setMobileMenu(!$('#sidebar').classList.contains('open'));return;}
+  if(el.id==='menu-scrim'){setMobileMenu(false,true);return;}
   if(el.id==='notification')return modal('Actividad reciente',state.records.slice(0,5).map(recordRow).join('')||'<p class="empty">Aún no hay actividad.</p>');
   if(el.id==='theme'){
    state.theme=state.theme==='light'?'dark':'light';
@@ -699,7 +739,11 @@ document.addEventListener('input',event=>{
  if(el.id==='hue')$('#hue-result').textContent=el.value+'° · Complementario '+((Number(el.value)+180)%360)+'°';
 });
 document.addEventListener('change',event=>{lab.change(event.target);lab.input(event.target);engineering.change(event.target);quality.change(event.target);if(event.target.form?.id==='measure'&&['pFormat','mFormat'].includes(event.target.name))toggleMeasurementFormat(event.target);if(event.target.id==='chart-days'){state.chartDays=Number(event.target.value);render();$('#chart-days').focus();}});
-document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();search();}});
+document.addEventListener('keydown',event=>{
+ if(event.key==='Escape'&&!dialog.open&&$('#sidebar').classList.contains('open'))setMobileMenu(false,true);
+ if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();search();}
+});
+matchMedia('(max-width:760px)').addEventListener('change',event=>{if(!event.matches)setMobileMenu(false);});
 dialog.addEventListener('close',flushDraft);
 window.addEventListener('popstate',()=>navigate(views[location.hash.slice(1)]?location.hash.slice(1):'inicio'));
 const inventory=createInventory({state,esc,field,btn,modal,api,refresh,render,toast});
