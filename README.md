@@ -116,6 +116,6 @@ En **Calidad**, selecciona el tipo de carta según cómo obtuviste los datos. Co
 
 ## Nueva fórmula de Pantone
 
-Escribe el código, captura por separado L*, a* y b* medidos, y registra las condiciones de impresión, incluido el recubrimiento. Añade las tintas del catálogo y los gramos que pesaste. Para importar esos componentes, usa un CSV con las columnas `codigo` y `gramos`. Revisa e incorpora los datos en **Guardar receta medida**.
+Escribe el código, captura por separado L*, a* y b* medidos, y registra las condiciones de impresión, incluido el recubrimiento. Escribe el nombre, el proveedor y los gramos ocupados de cada tinta. Para importar componentes, usa un CSV con las columnas `nombre`, `proveedor` y `gramos`. Revisa e incorpora los datos en **Guardar receta medida**.
 
 Para volver a preparar el color, escribe el mismo código e indica las condiciones del nuevo trabajo y la cantidad en kg o g. **Buscar y escalar receta** prioriza recetas medidas con el mismo material, lineatura, BCM, recubrimiento e iluminante/observador. Cuando faltan antecedentes comparables, la mezcla escalada es un punto de partida para una prueba. La absorción, la transferencia, el acabado y la iluminación requieren mediciones comparables para justificar un cambio de composición.

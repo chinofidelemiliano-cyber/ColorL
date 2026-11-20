@@ -202,7 +202,12 @@ export function recipeVariants(records, inks, {code, conditions, grams, target},
    source=Array.isArray(v.weighedParts)&&v.weighedParts.length?v.weighedParts:mixture(v.components,inks);
   }catch{return [];}
   if(!source.length||source.some(p=>!Number.isFinite(p.grams)||p.grams<=0))return [];
-  const parts=scale(source,grams);
+  const parts=scale(source,grams).map((part,i)=>{
+   const saved=v.ingredients?.find(ingredient=>ingredient.id===part.id);
+   const ink=inks.find(ink=>ink.id===part.id);
+   return {...part,name:source[i].name||saved?.name||ink?.title||saved?.code||ink?.value.code||'Tinta #'+part.id,
+    supplier:source[i].supplier||saved?.supplier||ink?.value.supplier||''};
+  });
   const changes=recipeConditions.filter(([name])=>{
    const old=previous[name]??(name==='substrate'?v.substrate:null);
    const current=conditions[name];
@@ -211,7 +216,8 @@ export function recipeVariants(records, inks, {code, conditions, grams, target},
   }).map(([,label])=>label);
   const measured=validLab(v.finalLab);
   const distance=measured&&target&&changes.length===0?delta(target,v.finalLab):null;
-  const available=allAvailable(parts,inks,conditions)&&enoughStock(parts,inks);
+  const linked=parts.filter(part=>part.id!=null);
+  const available=!linked.length||(allAvailable(linked,inks,conditions)&&enoughStock(linked,inks));
   const approved=['Aprobada','Compartida'].includes(record.status);
   return [{record,parts,changes,measured,distance,available,approved}];
  }).sort((a,b)=>Number(b.available)-Number(a.available)||a.changes.length-b.changes.length||

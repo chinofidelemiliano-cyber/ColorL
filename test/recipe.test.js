@@ -22,3 +22,14 @@ test('escala a 5 kg y prioriza las proporciones medidas para el recubrimiento so
  assert.deepEqual(legacy[0].parts.map(p=>p.grams),[1000,4000]);
  assert.equal(recipeVariants(records,[inks[0]],request)[0].available,false);
 });
+
+test('conserva nombre y proveedor al escalar tintas fuera del inventario',()=>{
+ const conditions={technology:'UV',substrate:'BOPP',lineature:500,bcm:3,finishing:'Sin recubrimiento',illuminant:'D65 / 2°'};
+ const weighedParts=[{name:'Azul',supplier:'Proveedor A',grams:40},{name:'Azul',supplier:'Proveedor B',grams:60}];
+ const records=[{id:1,title:'P277',value:{processConditions:conditions,weighedParts}}];
+ const [recipe]=recipeVariants(records,[],{code:'P277',conditions,grams:500});
+ assert.equal(recipe.available,true);
+ assert.deepEqual(recipe.parts.map(({name,supplier,grams})=>({name,supplier,grams})),[
+  {name:'Azul',supplier:'Proveedor A',grams:200},{name:'Azul',supplier:'Proveedor B',grams:300}
+ ]);
+});

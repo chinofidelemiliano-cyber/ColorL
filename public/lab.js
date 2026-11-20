@@ -91,12 +91,12 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
   btn('Ver ensayo','data-lab-trial="'+r.id+'"','','text-button')+statusTag(r.value.verified?'Verificado':'Por verificar')+'</div>').join('')||blank('Añade un ensayo para empezar a generar recomendaciones.'))+'</section>';
  const finishes=['Sin recubrimiento','Barniz','Laminado','Otro'];
  const lights=['D50','D65','D55','D75','A','F2','F11'];
- const recipeRow=(part={})=>{
-  const options=inks().map(ink=>'<option value="'+ink.id+'" '+(ink.id===part.id?'selected':'')+'>'+
-   esc([ink.value.code,ink.title,ink.value.colorName||ink.value.color].filter(Boolean).join(' · '))+'</option>').join('');
-  return '<div class="recipe-part"><label class="field">Tinta<select name="ink"><option value="">Seleccionar</option>'+options+'</select></label>'+
-   field('grams','Gramos pesados','number',part.grams??'')+btn('Quitar','data-lab-remove-part')+'</div>';
- };
+ const recipeRow=(part={})=>'<div class="recipe-part">'+
+  field('inkName','Nombre de la tinta','text',part.name??'')+field('supplier','Proveedor','text',part.supplier??'')+
+  field('grams','Gramos ocupados','number',part.grams??'')+btn('Quitar','data-lab-remove-part')+'</div>';
+ const recipeTable=parts=>'<ol class="lab-list">'+parts.map(({name,supplier,grams,percent})=>
+  '<li><strong>'+esc(name)+'</strong>'+(supplier?' · '+esc(supplier):'')+' · '+number(grams)+' g · '+number(percent)+' %</li>').join('')+'</ol>';
+ const scaleRecipe=(parts,batch)=>scale(parts,batch).map(({grams,percent},index)=>({...parts[index],grams,percent}));
  const workflowView=()=>'<form class="panel pantone-workflow" data-lab="recipe">'+
   '<h2>1. Identifica el color</h2><div class="form-grid">'+field('title','Código Pantone o identificador')+'</div>'+
   '<p class="muted">Para guardar, captura los valores medidos de la muestra que preparaste. Para buscar una receta por código, estos valores son opcionales.</p>'+
@@ -151,44 +151,48 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
    return '<section class="lab-candidate"><h3>'+esc(record.title)+'</h3><p>'+esc(record.value.substrate||'Material sin registrar')+' · '+esc(record.value.processConditions?.finishing||'Recubrimiento sin registrar')+' · '+esc(record.value.processConditions?.illuminant||'Iluminante sin registrar')+'</p>'+
     blank(changes.length?'Punto de partida escalado. Condiciones distintas o sin registrar: '+changes.join(', ')+'. Confirma el color antes de preparar todo el lote.':
      measured?'Receta medida en las mismas condiciones registradas. Se usan las proporciones de esa prueba y se escalan al lote solicitado.':'Coinciden las condiciones guardadas. Comprueba el color de la mezcla con una medición.')+
-    (contextual.length?'<ul>'+contextual.map(text=>'<li>'+esc(text)+'</li>').join('')+'</ul>':'')+partsTable(parts)+
-    (available?btn('Cargar como referencia','data-lab-use-recipe="'+i+'"'):blank('Revisa tintas sin disponibilidad, sin correspondencia en el catálogo o con existencia insuficiente.'))+'</section>';
+    (contextual.length?'<ul>'+contextual.map(text=>'<li>'+esc(text)+'</li>').join('')+'</ul>':'')+recipeTable(parts)+
+    (available?'':blank('Comprueba la disponibilidad de los componentes de esta receta anterior.'))+btn('Cargar como referencia','data-lab-use-recipe="'+i+'"')+'</section>';
   }).join(''):blank('No hay una receta utilizable para ese código y tipo de tinta. Registra una composición medida para poder recuperarla.');
  }
  async function saveRecipe(form,input){
   const title=input.title.trim(),conditions=recipeContext(input),lab=recipeLab(input,true);
   if(!title)throw new Error('Ingresa el código del color.');
-  const seen=new Set();
-  const parts=[...form.querySelectorAll('.recipe-part')].map(row=>{
-   const id=Number(query(row,'[name=ink]').value), raw=query(row,'[name=grams]').value;
-   if(!id&&!raw)return null;
-   const ink=inks().find(ink=>ink.id===id);
-   if(!ink||seen.has(id))throw new Error('Selecciona una tinta del catálogo en cada fila y evita repetirla.');
-   if(ink.value.technology!==conditions.technology)throw new Error('Verifica que todas las tintas correspondan al tipo de tinta indicado.');
-   seen.add(id);
-   return {id,grams:positive(raw,'Los gramos de '+ink.title)};
-  }).filter(Boolean);
+  const parts=[...form.querySelectorAll('.recipe-part')].map(row=>[
+   query(row,'[name=inkName]').value,query(row,'[name=supplier]').value,query(row,'[name=grams]').value
+  ]).filter(row=>row.some(value=>value.trim())).map(recipePart);
   const batch=parts.reduce((sum,p)=>sum+p.grams,0);
   if(!parts.length||!Number.isFinite(batch))throw new Error('Agrega las tintas y gramajes que realmente pesaste.');
   await persist({kind:'formulas',title,status:'Borrador',value:{
    recipeCode:title,target:title,targetLab:lab,finalLab:lab,technology:conditions.technology,substrate:conditions.substrate,
    anilox:conditions.lineature+' lpi · '+conditions.bcm+' BCM',batch:String(batch),processConditions:conditions,
    color:displayLab(lab,conditions.illuminant)?.hex||'',weighedParts:parts,
-   ingredients:parts.map(part=>({id:part.id,code:codeFor(part.id),name:nameFor(part.id),color:inks().find(ink=>ink.id===part.id)?.value.colorName||inks().find(ink=>ink.id===part.id)?.value.color||''})),
-   components:scale(parts,batch).map(p=>codeFor(p.id)+': '+p.percent.toFixed(6)).join('\n'),
+   components:scaleRecipe(parts,batch).map(p=>p.name+' ('+p.supplier+'): '+p.percent.toFixed(6)).join('\n'),
    evidenceType:'Manual',notes:'Receta pesada y medida por el usuario.'
   }});
-  result(form,blank('Receta guardada · '+number(batch)+' g')+partsTable(scale(parts,batch)));
+  result(form,blank('Receta guardada · '+number(batch)+' g')+recipeTable(scaleRecipe(parts,batch)));
   toast('Receta medida guardada');
+ }
+ function recipePart([name,supplier,raw]){
+  name=String(name??'').trim();supplier=String(supplier??'').trim();
+  if(!name||!supplier)throw new Error('Escribe el nombre y el proveedor de cada tinta.');
+  return {name,supplier,grams:positive(String(raw??'').replace(',','.'),'Los gramos de '+name)};
  }
  async function importRecipe(form){
   const file=form.elements.file.files[0];
   const {host}=pending.get(form);
   if(!file||file.size>1000000)throw new Error('Elige un CSV de hasta 1 MB.');
   const [headers=[],...rows]=parseSeparated(await file.text());
-  const keys=headers.map(normalize),codeIndex=keys.indexOf('codigo'),gramsIndex=keys.indexOf('gramos');
-  if(codeIndex<0||gramsIndex<0||!rows.length||rows.length>100)throw new Error('Usa las columnas codigo y gramos, con 1 a 100 tintas.');
-  const parts=mixture(rows.map(row=>String(row[codeIndex]||'')+': '+String(row[gramsIndex]||'').replace(',','.')).join('\n'),inks());
+  const keys=headers.map(normalize),nameIndex=keys.indexOf('nombre'),supplierIndex=keys.indexOf('proveedor');
+  const codeIndex=keys.indexOf('codigo'),gramsIndex=keys.indexOf('gramos');
+  if(gramsIndex<0||!rows.length||rows.length>100||
+    ((nameIndex<0||supplierIndex<0)&&codeIndex<0))throw new Error('Usa las columnas nombre, proveedor y gramos, con 1 a 100 tintas.');
+  const parts=nameIndex>=0&&supplierIndex>=0?
+   rows.map(row=>recipePart([row[nameIndex],row[supplierIndex],row[gramsIndex]])):
+   mixture(rows.map(row=>String(row[codeIndex]||'')+': '+String(row[gramsIndex]||'').replace(',','.')).join('\n'),inks()).map(part=>{
+    const ink=inks().find(record=>record.id===part.id);
+    return {name:ink.title,supplier:ink.value.supplier||'',grams:part.grams};
+   });
   query(host,'[data-recipe-parts]').innerHTML=parts.map(recipeRow).join('');
   query(host,'.result').hidden=true;
   document.querySelector('#dialog').close();
@@ -281,13 +285,13 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
   if(d.labRemovePart!==undefined){button.closest('.recipe-part').remove();return true;}
   if(d.labImportRecipe!==undefined){
    if(!editable())throw new Error('Tu rol permite consultar las recetas.');
-   modal('Cargar componentes de una receta','<form data-lab="recipe-import">'+blank('Usa un CSV con columnas codigo y gramos. Los códigos deben existir en tu catálogo. Revisa los componentes cargados antes de guardar.')+
+   modal('Cargar componentes de una receta','<form data-lab="recipe-import">'+blank('Usa un CSV con las columnas nombre, proveedor y gramos. Revisa los componentes antes de guardar.')+
     '<label class="field">Archivo CSV<input type="file" name="file" accept=".csv" required></label><button class="primary">Cargar para revisión</button>'+output+'</form>');
    pending.set(document.querySelector('[data-lab=recipe-import]'),{host:button.form});return true;
   }
   if(d.labUseRecipe!==undefined){
    const form=button.form,match=pending.get(query(form,'[data-lab-proposals]'))?.[Number(d.labUseRecipe)];
-   if(match?.available){
+   if(match){
     query(form,'[data-recipe-parts]').innerHTML=match.parts.map(part=>recipeRow({...part,grams:Number(part.grams.toPrecision(10))})).join('');
     // A copied recipe needs a fresh measurement before it can be saved as measured.
     for(const name of ['lab0','lab1','lab2'])form.elements[name].value='';
@@ -303,7 +307,7 @@ export function createLab({state,esc,field,heading,btn,modal,auth,api,refresh,re
   if(form?.dataset.lab!=='recipe')return;
   query(form,'.result').hidden=true;
   query(form,'[data-finish-detail]').hidden=form.elements.finish.value==='Sin recubrimiento';
-  if(['ink','grams'].includes(field.name))return;
+  if(['inkName','supplier','grams'].includes(field.name))return;
   const proposals=query(form,'[data-lab-proposals]');
   proposals.hidden=true;pending.delete(proposals);
   const host=query(form,'[data-lab-preview]'), values=dataOf(form);
