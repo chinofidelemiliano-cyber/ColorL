@@ -169,3 +169,5 @@ body:not(.access-locked) { background:radial-gradient(ellipse at 78% 0%,var(--wo
 .workshop-plan { list-style:none; padding:0; margin:.7rem 0; }
 .workshop-plan > li { border-inline-start:2px solid var(--cyan); padding:.55rem .7rem; border-radius:0 .5rem .5rem 0; background:var(--raised); }
 .workshop-plan > li + li { border-inline-start-color:var(--pink); }
+.measure-channels-four { grid-template-columns:repeat(4,minmax(0,1fr)); }
+@media (max-width:1000px) { .measure-channels-four { grid-template-columns:repeat(2,minmax(0,1fr)); } }

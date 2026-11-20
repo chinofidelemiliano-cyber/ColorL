@@ -82,6 +82,7 @@ function render(){
  const content={...lab.views,espectral:colorTools.spectralView,calidad:quality.view,ingenieria:engineering.view,preparados:prepared.view,inicio:dashboard,mediciones:measurements,correcciones:simulation,asistente:assistant,academia:academy.view,calculadoras:calculators,historial:reports,usuarios:users};
  $('#main').innerHTML=(content[state.view] || (()=>collection(state.view)))();
  initializeTheme();
+ if(state.view==='mediciones')$('#measure').querySelectorAll('select[name$=Format]').forEach(toggleMeasurementFormat);
  if(state.view==='inicio') chart();
  if(state.view==='usuarios') loadUsers();
 }
@@ -256,16 +257,27 @@ async function editor(kind,r,copy=false){
  (r?.value.source&&['inventario','anilox'].includes(kind)?inventory.original(r.value.source):'')+(reviewing?'<button class="secondary" name="status" value="Aprobada">Aprobar</button><button class="secondary" name="status" value="Compartida">Compartir con el equipo</button>'+(r.status==='En revisión'?'<button class="secondary" name="status" value="Rechazada">Rechazar</button>':''):'')+'</div>'+(canEdit && !r?'<p id="draft-status" class="notice" role="status">'+(draft?'Borrador recuperado':'')+'</p>':'')+'<p class="error" role="alert"></p></form>');
 }
 const labFields=(prefix,values=[])=>['L*','a*','b*'].map((label,i)=>field(prefix+i,label,'number',values[i],true)).join('');
+const measurementChannels={
+ CIELAB:['L*','a*','b*'],CIELCh:['L*','C*','h°'],XYZ:['X','Y','Z'],sRGB:['R','G','B'],CMYK:['C (%)','M (%)','Y (%)','K (%)']
+};
+const measurementStem=(prefix,format)=>prefix+(format==='CIELAB'?'':format);
+const readingChannels=(stem,labels)=>{
+ const controls=labels.map((label,i)=>{
+  const name=stem+i;
+  const control=field(name,label,'number','',true);
+  return label==='L*'?control.replace('name="'+name+'"','name="'+name+'" data-lightness aria-describedby="lightness-'+name+'"')
+   .replace('</label>','<small class="field-error" id="lightness-'+name+'" aria-live="polite"></small></label>'):control;
+ }).join('');
+ return '<div class="form-grid measure-channels'+(labels.length===4?' measure-channels-four':'')+'">'+controls+'</div>';
+};
 function measurementFields(prefix,full){
- const controls=labFields(prefix).replace('name="'+prefix+'0"', 'name="'+prefix+'0" data-lightness aria-describedby="lightness-'+prefix+'"')
-  .replace('</label>','<small class="field-error" id="lightness-'+prefix+'" aria-live="polite"></small></label>');
- const core='<div class="form-grid measure-channels">'+controls+'</div>';
+ const core=readingChannels(prefix,measurementChannels.CIELAB);
  if(!full)return core;
- return '<div class="form-grid">'+field(prefix+'Format','Formato',['CIELAB','CIELCh','XYZ','sRGB','CMYK'])+'</div>'+
-  '<div data-measure-fields="'+prefix+'Lab">'+core+'</div>'+
-  '<div data-measure-fields="'+prefix+'Alternate" hidden>'+field(prefix+'Values','Canales en orden, separados por comas')+'</div>'+
-  '<div data-measure-fields="'+prefix+'Icc" hidden><p class="notice">Ingresa CMYK en porcentaje y CIELAB convertido externamente con tu perfil ICC para las condiciones indicadas.</p>'+
-  field(prefix+'Profile','Nombre y versión del perfil ICC')+field(prefix+'IccLab','CIELAB de la conversión')+'</div>';
+ return '<div class="form-grid">'+field(prefix+'Format','Formato',Object.keys(measurementChannels))+'</div>'+
+  Object.entries(measurementChannels).map(([format,labels])=>'<div data-measure-fields="'+format+'" '+(format==='CIELAB'?'':'hidden')+'>'+
+   (format==='CIELAB'?core:readingChannels(measurementStem(prefix,format),labels))+
+   (format==='CMYK'?'<p class="notice">Ingresa CMYK en porcentaje y CIELAB convertido externamente con tu perfil ICC para las condiciones indicadas.</p>'+
+     field(prefix+'Profile','Nombre y versión del perfil ICC','text','',true)+readingChannels(prefix+'Icc',measurementChannels.CIELAB):'')+'</div>').join('');
 }
 function measurements(){
  const full=state.user.fullAccess;
@@ -298,9 +310,11 @@ async function fillInstrumentCsv(file){
  const set=(key,value)=>{form.elements.namedItem(key).value=value??'';};
  for(const [prefix,reading] of [['p',data.pattern],['m',data.sample]]){
   set(prefix+'Format',reading.format);toggleMeasurementFormat(form.elements.namedItem(prefix+'Format'));
-  if(reading.format==='CIELAB')reading.lab.forEach((value,i)=>set(prefix+i,value));
-  else{
-   set(prefix+'Values',reading.text);set(prefix+'Profile',reading.profile);set(prefix+'IccLab',reading.iccLab);
+  const stem=measurementStem(prefix,reading.format);
+  reading.values.forEach((value,i)=>set(stem+i,value));
+  if(reading.format==='CMYK'){
+   set(prefix+'Profile',reading.profile);
+   reading.lab.forEach((value,i)=>set(prefix+'Icc'+i,value));
   }
  }
  const values={illuminant:data.condition,condition:data.mode,patternDensity:data.pattern.density,sampleDensity:data.sample.density,
@@ -310,12 +324,15 @@ async function fillInstrumentCsv(file){
  dialog.close();toast('Lecturas cargadas. Revísalas antes de calcular y guardar.');
 }
 function toggleMeasurementFormat(select){
- const prefix=select.name[0],format=select.value;
- const groups={Lab:format==='CIELAB',Alternate:format!=='CIELAB',Icc:format==='CMYK'};
- for(const [key,shown] of Object.entries(groups)){
-  const group=select.form.querySelector('[data-measure-fields="'+prefix+key+'"]');
-  group.hidden=!shown;for(const input of group.querySelectorAll('input'))input.disabled=!shown;
+ const card=select.closest('.reading-card');
+ for(const group of card.querySelectorAll('[data-measure-fields]')){
+  group.hidden=group.dataset.measureFields!==select.value;
+  for(const input of group.querySelectorAll('input'))input.disabled=group.hidden;
+  if(!group.hidden)group.querySelectorAll('[data-lightness]').forEach(lightnessError);
  }
+ const result=select.form.querySelector('.result');
+ result.hidden=true;
+ select.form.querySelector('.error').textContent='';
 }
 
 function measurementRow(record){
@@ -350,7 +367,7 @@ function labColor([l,a,b]){
 const formData=f=>Object.fromEntries(new FormData(f));
 function lightnessError(input){
  const message=input.value!==''&&(input.valueAsNumber<0||input.valueAsNumber>100)?
-  (input.name==='p0'?'Patrón':'Muestra')+' · L*: '+input.value+' está fuera de rango. Revisa la lectura del instrumento. L* debe estar entre 0 y 100.':'';
+  (input.name.startsWith('p')?'Patrón':'Muestra')+' · L*: '+input.value+' está fuera de rango. Revisa la lectura del instrumento. L* debe estar entre 0 y 100.':'';
  const feedback=input.parentElement.querySelector('.field-error');
  feedback.textContent=message;
  input.setAttribute('aria-invalid',String(Boolean(message)));
@@ -363,8 +380,11 @@ function measure(form){
  if(invalid.length){invalid[0].focus();return;}
  if(!form.reportValidity())return;
  const v=formData(form),mode=prefix=>v[prefix+'Format']||'CIELAB';
- const reading=prefix=>instrumentReading({format:mode(prefix),text:mode(prefix)==='CIELAB'?[0,1,2].map(i=>v[prefix+i]).join(', '):v[prefix+'Values'],
-  profile:v[prefix+'Profile'],iccLab:v[prefix+'IccLab'],condition:v.illuminant});
+ const channels=(stem,labels)=>labels.map((_,i)=>v[stem+i]??'').join(', ');
+ const reading=prefix=>instrumentReading({
+  format:mode(prefix),text:channels(measurementStem(prefix,mode(prefix)),measurementChannels[mode(prefix)]),
+  profile:v[prefix+'Profile'],iccLab:mode(prefix)==='CMYK'?channels(prefix+'Icc',measurementChannels.CIELAB):'',condition:v.illuminant
+ });
  const pattern=reading('p'),sample=reading('m'),p=pattern.lab,m=sample.lab;
  const optics=opticalEvidence(v.patternCurve,v.sampleCurve,v.patternDensity,v.sampleDensity);
  if((optics.patternDensity!=null||optics.sampleDensity!=null)&&!v.densityCondition?.trim())throw new Error('Identifica el canal o la condición de la densidad óptica.');
@@ -384,7 +404,7 @@ function measure(form){
  (optics.densityDifference==null?'':'<p>Diferencia de densidad '+signed(optics.densityDifference)+'</p>')+
  (optics.spectralRms==null?(optics.pattern.length&&optics.sample.length?'<p>Las curvas usan mallas distintas. El RMS requiere las mismas longitudes de onda.</p>':''):'<p>Error espectral RMS '+optics.spectralRms.toFixed(3)+' puntos de reflectancia.</p>');
  result.firstElementChild.after(comparisonInspector(p,m,d,delta<=tolerance,previews));
- const {pProfile,pIccLab,mProfile,mIccLab,pValues,mValues,...metadata}=v;
+ const metadata=Object.fromEntries(Object.entries(v).filter(([key])=>!/^[pm](?:Profile|(?:CIELCh|XYZ|sRGB|CMYK|Icc)\d)$/.test(key)));
  return {...metadata,delta,tolerance,color:previews[1]?.hex||'',target:v.method+' · '+delta.toFixed(2),pattern:p,sample:m,readings:{pattern,sample},optics};
 }
 
