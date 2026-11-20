@@ -184,3 +184,37 @@ export function lotCost(parts,inks){
  }
  return currency?{currency,amount}:null;
 }
+
+export const recipeConditions = [
+ ['substrate','Material'],['lineature','Lineatura'],['bcm','Aporte BCM'],
+ ['finishing','Recubrimiento'],['illuminant','Iluminante y observador']
+];
+
+export function recipeVariants(records, inks, {code, conditions, grams, target}, delta) {
+ const key=normalize(code);
+ return records.flatMap(record=>{
+  const v=record.value, previous=v.processConditions||{};
+  if(['Rechazada','Archivada'].includes(record.status)||!key||
+     ![v.recipeCode,v.target,record.title].some(value=>normalize(value)===key)||
+     normalize(previous.technology||v.technology)!==normalize(conditions.technology))return [];
+  let source;
+  try{
+   source=Array.isArray(v.weighedParts)&&v.weighedParts.length?v.weighedParts:mixture(v.components,inks);
+  }catch{return [];}
+  if(!source.length||source.some(p=>!Number.isFinite(p.grams)||p.grams<=0))return [];
+  const parts=scale(source,grams);
+  const changes=recipeConditions.filter(([name])=>{
+   const old=previous[name]??(name==='substrate'?v.substrate:null);
+   const current=conditions[name];
+   if(old==null||old===''||current==null||current==='')return true;
+   return ['lineature','bcm'].includes(name)?Number(old)!==Number(current):normalize(old)!==normalize(current);
+  }).map(([,label])=>label);
+  const measured=validLab(v.finalLab);
+  const distance=measured&&target&&changes.length===0?delta(target,v.finalLab):null;
+  const available=allAvailable(parts,inks,conditions)&&enoughStock(parts,inks);
+  const approved=['Aprobada','Compartida'].includes(record.status);
+  return [{record,parts,changes,measured,distance,available,approved}];
+ }).sort((a,b)=>Number(b.available)-Number(a.available)||a.changes.length-b.changes.length||
+   (a.distance??Infinity)-(b.distance??Infinity)||Number(b.measured)-Number(a.measured)||
+   Number(b.approved)-Number(a.approved)||b.record.id-a.record.id);
+}

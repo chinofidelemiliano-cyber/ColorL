@@ -99,7 +99,7 @@ En los catálogos las dimensiones de cilindros sin medir se conservan como pendi
 
 ## Diagnóstico previo a la corrección e importación de lecturas
 
-En **Nueva fórmula de Pantone → Medir y corregir**, comprueba la repetibilidad del instrumento, la transferencia, el sustrato y el estado de tinta y secado o curado. Compara cada comprobación con una condición aprobada y registra la referencia utilizada. Si hay datos pendientes o divergencias, puedes conservar la comparación y ver qué revisar antes de dosificar. **Diagnóstico de impresión** contiene procedimientos por síntoma.
+Antes de dosificar, comprueba la repetibilidad del instrumento, la transferencia, el sustrato y el estado de tinta y secado o curado. Compara cada comprobación con una condición aprobada y registra la referencia utilizada. Si hay datos pendientes o divergencias, puedes conservar la comparación y ver qué revisar antes de dosificar. **Diagnóstico de impresión** contiene procedimientos por síntoma.
 
 El asistente toma las dosis de ensayos verificados con composición y condiciones comparables. Agrupa las dosis equivalentes y descarta una propuesta si alguna repetición comparable no habría mejorado el ΔE. La confianza se muestra como baja con una prueba y moderada si cuenta con repeticiones compatibles. El intervalo comunicado describe los escenarios registrados y no constituye un intervalo estadístico de predicción. Prepara primero una muestra pequeña y comprueba después el efecto, la estabilidad y la adherencia.
 
@@ -116,6 +116,6 @@ En **Calidad**, selecciona el tipo de carta según cómo obtuviste los datos. Co
 
 ## Nueva fórmula de Pantone
 
-Captura el objetivo en CIELAB o CIELCh, o elige un patrón guardado. Completa una sola vez las condiciones comunes y busca propuestas en mezclas ensayadas con tus tintas disponibles. Copia la propuesta como punto de partida y registra los gramajes que pesaste. La muestra puede tener un formato distinto al del objetivo.
+Escribe el código, captura por separado L*, a* y b* medidos, y registra las condiciones de impresión, incluido el recubrimiento. Añade las tintas del catálogo y los gramos que pesaste. Para importar esos componentes, usa un CSV con las columnas `codigo` y `gramos`. Revisa e incorpora los datos en **Guardar receta medida**.
 
-Guarda cada prueba o registra el resultado después de un ajuste en la misma pantalla. Reabre una igualación guardada para continuar su historial. **Guardar fórmula final** conserva la última medición y los gramajes reales como borrador. Si la muestra cumple la tolerancia y confirmas la prueba y las condiciones de prensa, la mezcla queda disponible como evidencia experimental para futuras propuestas. La aprobación sigue el proceso de revisión de fórmulas.
+Para volver a preparar el color, escribe el mismo código e indica las condiciones del nuevo trabajo y la cantidad en kg o g. **Buscar y escalar receta** prioriza recetas medidas con el mismo material, lineatura, BCM, recubrimiento e iluminante/observador. Cuando faltan antecedentes comparables, la mezcla escalada es un punto de partida para una prueba. La absorción, la transferencia, el acabado y la iluminación requieren mediciones comparables para justificar un cambio de composición.
